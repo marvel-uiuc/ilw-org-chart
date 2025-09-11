@@ -6,9 +6,9 @@ export default defineConfig({
     build: {
         outDir: "../dist/cdn",
         lib: {
-            name: "<%= name %>",
-            entry: "<%= name %>.ts",
-            fileName: "<%= name %>",
+            name: "ilw-org-chart",
+            entry: "ilw-org-chart.ts",
+            fileName: "ilw-org-chart",
             formats: ["es"],
         },
         rollupOptions: {
