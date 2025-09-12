@@ -1,0 +1,20 @@
+.org {
+    background-color: #eee;
+    margin: 10px;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+.org-level {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 5px 0;
+}
+.org-vertical-subtree {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-left: 5px;
+    box-sizing: border-box;
+}

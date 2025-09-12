@@ -1,14 +1,18 @@
-import { LitElement, html, unsafeCSS } from "lit";
+import { html, LitElement, unsafeCSS } from "lit";
 // @ts-ignore
-import styles from './ilw-org-chart.styles.css?inline';
-import './ilw-org-chart.css';
+import styles from "./ilw-org-chart.styles.css?inline";
+import "./ilw-org-chart.css";
 import { customElement, property } from "lit/decorators.js";
+import { Org } from "./Org";
+import { calculateLevelOrientations, measureLevelHeights, treeLevelOrgs } from "./tree";
 
 @customElement("ilw-org-chart")
 export default class OrgChart extends LitElement {
-
     @property()
     theme = "";
+
+    @property()
+    org: Org | null = null;
 
     static get styles() {
         return unsafeCSS(styles);
@@ -19,11 +23,16 @@ export default class OrgChart extends LitElement {
     }
 
     render() {
-        return html`
-            <div>
-                <slot></slot>
-            </div>
-        `;
+        const widths = treeLevelOrgs(this.org!);
+        const oriented = calculateLevelOrientations(widths, 150, 800);
+        console.log(Object.fromEntries(oriented.entries()));
+        const measured = measureLevelHeights(widths, 'org', 800, 150, 300, oriented);
+        console.log(measured);
+        return html` <div>
+            <ul class="org-chart ${this.theme}">
+                
+            </ul>
+        </div> `;
     }
 }
 

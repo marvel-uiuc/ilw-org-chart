@@ -11,7 +11,97 @@
 </head>
 
 <body style="margin: 0; padding: 0;">
-<ilw-org-chart></ilw-org-chart>
+<div id="holder">
+
+</div>
+
+
+<script>
+    /**
+     *
+     * @type {Org}
+     */
+    const org = {
+        title: "Vice Chancellor for Student Affairs",
+        large: true,
+        children: [
+            {
+                title: "Administrative Assistant",
+                weight: -1,
+            },
+            {
+                title: "Director, Advancement",
+            },
+            {
+                title: "Director, Marketing and Communications",
+            },
+            {
+                title: "Associate Vice Chancellor for Student Success and Engagement",
+                weight: 1,
+                large: true,
+                children: [
+                    { title: "Sr. Assistant Dean, Fraternity and Sorority Affairs" },
+                    { title: "Director, Illinois Leadership Center" },
+                    { title: "Director, Minority Student Affairs" },
+                    { title: "Sr. Assistant Dean, New/Transfer Student Programs" },
+                    { title: "Director, Testing Center" },
+                    { title: "Director, The Career Center" }
+                ]
+            },
+            {
+                title: "Associate Vice Chancellor for Auxiliary, Health and Wellbeing",
+                weight: 1,
+                children: [
+                    { title: "Director, Counseling Center" },
+                    { title: "Director, McKinley Health Center" },
+                    { title: "Director, Parking*" },
+                    { title: "Director, Auxiliary Shared Technology Services" },
+                    { title: "Director, State Farm Center**" },
+                    { title: "Director, University Housing" },
+                    { title: "Director, Campus Recreation" },
+                    { title: "Director, Illini Union" }
+                ]
+            },
+            {
+                title: "Associate Vice Chancellor/Dean of Students",
+                weight: 1,
+                children: [
+                    { title: "Director, Student Conflict Resolution" },
+                    { title: "Director, Student Legal Services" },
+                    { title: "Director, Tenant Union and Campus and Community Student Services" }
+                ]
+            },
+            {
+                title: "Associate Vice Chancellor for the Office of Inclusion and Intercultural Relations",
+                weight: 1,
+                children: [
+                    { title: "Director, Asian American Cultural Center" },
+                    { title: "Director, Bruce D. Nesbitt African American Cultural Center" },
+                    { title: "Director, La Casa Cultural Latina" },
+                    { title: "Director, Diversity and Social Justice Education" },
+                    { title: "Director, International Education" },
+                    { title: "Director, LGBT Resource Center" },
+                    { title: "Director, Native American House" },
+                    { title: "Director, Women’s Resources Center" }
+                ]
+            },
+            {
+                title: "Senior Executive Director for Administrative Services",
+                weight: 1,
+                children: [
+                    { title: "Director, Assessment and Planning" },
+                    { title: "Director, Budget and Finance" },
+                    { title: "Director, Human Resources" }
+                ]
+            }
+        ]
+    }
+
+    const chart = document.createElement('ilw-org-chart');
+    chart.org = org;
+    document.getElementById('holder').appendChild(chart);
+
+</script>
 </body>
 
 </html>
