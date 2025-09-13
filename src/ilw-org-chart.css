@@ -4,12 +4,20 @@
     padding: 10px;
     box-sizing: border-box;
 }
+.org-large {
+    padding: 15px;
+    margin: 5px;
+    font-size: 1.1em;
+}
 
 .org-level {
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: stretch;
     margin: 5px 0;
+}
+.org-vertical {
+    align-items: flex-start;
 }
 .org-vertical-subtree {
     display: flex;

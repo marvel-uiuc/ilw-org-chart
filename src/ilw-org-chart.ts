@@ -24,9 +24,9 @@ export default class OrgChart extends LitElement {
 
     render() {
         const widths = treeLevelOrgs(this.org!);
-        const oriented = calculateLevelOrientations(widths, 150, 800);
+        const oriented = calculateLevelOrientations(widths, 150, 1200);
         console.log(Object.fromEntries(oriented.entries()));
-        const measured = measureLevelHeights(widths, 'org', 800, 150, 300, oriented);
+        const measured = measureLevelHeights(widths, 'org', 1200, 150, 300, oriented);
         console.log(measured);
         return html` <div>
             <ul class="org-chart ${this.theme}">

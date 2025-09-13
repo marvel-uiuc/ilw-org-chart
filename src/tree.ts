@@ -177,8 +177,6 @@ export function measureLevelHeights(
 
         orgSizes.set(org.id, [rect.width, rect.height]);
 
-        console.log(rect);
-
         return orgContainer;
     }
 
@@ -208,6 +206,9 @@ export function measureLevelHeights(
             for (const org of orgs) {
                 const el = document.createElement("div");
                 el.className = cssClass;
+                if (org.large) {
+                    el.className += " " + cssClass + "-large";
+                }
                 el.style.maxWidth = columnWidth + "px";
 
                 const titleDiv = document.createElement("div");
@@ -231,7 +232,11 @@ export function measureLevelHeights(
             orientations.get(level) === "vertical"
         ) {
             // Find all the unique parents of this level's orgs
-            firstVerticalLevel = level;
+            const verticalContainer = document.createElement("div");
+            verticalContainer.className =
+                cssClass + "-level "+ cssClass + "-vertical";
+            verticalContainer.style.width = availableSpace + "px";
+            container.appendChild(verticalContainer);
             const uniqueParents = new Set<ConnectedOrg>();
             for (const org of orgs) {
                 if (org.parent) {
@@ -244,9 +249,8 @@ export function measureLevelHeights(
                 subtreeContainer.className = cssClass + "-vertical-subtree";
                 const width = orgSizes.get(org.id)![0];
                 subtreeContainer.style.maxWidth = width + "px";
-                container.appendChild(subtreeContainer);
+                verticalContainer.appendChild(subtreeContainer);
                 for (const child of org.children || []) {
-                    console.log(child);
                     if (child.level === level) {
                         const orgSubtree = renderVerticalSubtree(
                             child,
