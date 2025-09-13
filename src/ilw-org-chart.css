@@ -1,8 +1,10 @@
 .org {
     background-color: #eee;
-    margin: 10px;
+    margin-top: 10px;
+    margin-bottom: 10px;
     padding: 10px;
     box-sizing: border-box;
+    text-align: center;
 }
 .org-large {
     padding: 15px;
@@ -15,6 +17,7 @@
     justify-content: center;
     align-items: stretch;
     margin: 5px 0;
+    column-gap: 20px;
 }
 .org-vertical {
     align-items: flex-start;

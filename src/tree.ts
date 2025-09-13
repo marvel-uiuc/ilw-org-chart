@@ -7,8 +7,19 @@ export interface ConnectedOrg extends Org {
     children?: ConnectedOrg[];
 }
 
+export type OrgPlacement = {
+    width: number;
+    height: number;
+    top: number;
+    left?: number;
+}
+
 export class TreeLevelOrgsMap extends Map<number, ConnectedOrg[]> {
     [level: number]: ConnectedOrg[];
+
+    orderedEntries() {
+        return Array.from(this.entries()).sort((a, b) => a[0] - b[0]);
+    }
 }
 
 export class LevelOrientationsMap extends Map<
@@ -16,6 +27,9 @@ export class LevelOrientationsMap extends Map<
     "horizontal" | "vertical"
 > {
     [level: number]: "horizontal" | "vertical";
+    orderedEntries() {
+        return Array.from(this.entries()).sort((a, b) => a[0] - b[0]);
+    }
 }
 
 let orgIdCount = 1;
@@ -35,6 +49,10 @@ export function treeLevelOrgs(org: Org): TreeLevelOrgsMap {
             parent: parent as ConnectedOrg,
             level,
         } as ConnectedOrg;
+        if (!levelOrgs.has(level)) {
+            levelOrgs.set(level, []);
+        }
+        levelOrgs.get(level)!.push(connectedNode);
         // Replace children with ConnectedOrgs
         if (node.children) {
             const connectedChildren: ConnectedOrg[] = [];
@@ -48,10 +66,6 @@ export function treeLevelOrgs(org: Org): TreeLevelOrgsMap {
             }
             connectedNode.children = connectedChildren;
         }
-        if (!levelOrgs.has(level)) {
-            levelOrgs.set(level, []);
-        }
-        levelOrgs.get(level)!.push(connectedNode);
         return connectedNode;
     }
 
@@ -89,17 +103,17 @@ export function calculateLevelOrientations(
         if (!orgs) return;
         for (const org of orgs) {
             if (org.children && org.children.length > 0) {
-                // Find the level(s) of children
-                // Assume children are always in level+1
-                const childLevel = level + 1;
-                if (orientations.get(childLevel) !== "vertical") {
-                    orientations.set(childLevel, "vertical");
-                    propagateVertical(childLevel);
+                // Find all children and set their levels to vertical
+                for (const child of org.children) {
+                    if (child.level !== undefined) {
+                        orientations.set(child.level, "vertical");
+                        propagateVertical(child.level);
+                    }
                 }
             }
         }
     }
-    for (const [level, orientation] of orientations.entries()) {
+    for (const [level, orientation] of orientations.orderedEntries()) {
         if (orientation === "vertical") {
             propagateVertical(Number(level));
         }
@@ -138,18 +152,22 @@ export function measureLevelHeights(
     // container.style.pointerEvents = 'none';
     // container.style.left = '-9999px';
     // container.style.top = '-9999px';
-    document.body.appendChild(container);
+    document.getElementById("holder")!.appendChild(container);
 
-    const orgSizes = new Map<number, [number, number]>();
+    const orgSizes = new Map<number, OrgPlacement>();
     const levelHeights = new Map();
 
     // Helper to recursively render vertical sub-tree
     function renderVerticalSubtree(
         org: ConnectedOrg,
         parent: HTMLDivElement,
+        offset = 0,
     ): HTMLElement {
         const orgContainer = document.createElement("div");
         orgContainer.className = cssClass + " " + cssClass + "-vertical-org";
+        orgContainer.style.marginLeft = offset + "px";
+        orgContainer.style.boxSizing = "border-box";
+        orgContainer.style.width = "calc(100% - " + offset + "px)";
         // Title
         const titleDiv = document.createElement("div");
         titleDiv.className = cssClass + "-title";
@@ -162,20 +180,25 @@ export function measureLevelHeights(
             subtitleDiv.textContent = org.subtitle || "";
             orgContainer.appendChild(subtitleDiv);
         }
+        parent.appendChild(orgContainer);
         // Children
         if (org.children && org.children.length > 0) {
             for (const child of org.children) {
                 const childContainer = renderVerticalSubtree(
                     child as ConnectedOrg,
                     parent,
+                    offset + 20
                 );
             }
         }
-        parent.appendChild(orgContainer);
 
         const rect = orgContainer.getBoundingClientRect();
 
-        orgSizes.set(org.id, [rect.width, rect.height]);
+        orgSizes.set(org.id, {
+            width: rect.width,
+            height: rect.height,
+            top: rect.top
+        });
 
         return orgContainer;
     }
@@ -186,11 +209,9 @@ export function measureLevelHeights(
     for (let level = 0; level <= maxLevel; level++) {
         const orgs = levelsMap.get(level) || [];
         console.log("level", level, orgs);
-        // If before first vertical level, or not a descendant of the first vertical level, measure as usual
-        if (
-            firstVerticalLevel === null &&
-            orientations.get(level) !== "vertical"
-        ) {
+        
+        if (orientations.get(level) === "horizontal") {
+            firstVerticalLevel = null;
             const levelContainer = document.createElement("div");
             levelContainer.className =
                 cssClass + "-level " + cssClass + "-horizontal";
@@ -199,6 +220,15 @@ export function measureLevelHeights(
                 availableSpace / orgs.length,
                 maxColWidth,
             );
+
+            const largeOrgs = orgs.filter(org => org.large);
+            const smallOrgs = orgs.filter(org => !org.large);
+
+            // Divide the space so that large orgs get a bit more space
+            const totalUnits = largeOrgs.length * 1.5 + smallOrgs.length * 1.0;
+            const unitWidth = availableSpace / totalUnits;
+            const largeOrgWidth = Math.min(Math.max(unitWidth * 1.5, minColWidth), maxColWidth);
+            const smallOrgWidth = Math.min(Math.max(unitWidth * 1.0, minColWidth), maxColWidth);
 
             levelContainer.style.width = availableSpace + "px";
             container.appendChild(levelContainer);
@@ -209,7 +239,7 @@ export function measureLevelHeights(
                 if (org.large) {
                     el.className += " " + cssClass + "-large";
                 }
-                el.style.maxWidth = columnWidth + "px";
+                el.style.width = org.large ? largeOrgWidth + "px" : smallOrgWidth + "px";
 
                 const titleDiv = document.createElement("div");
                 titleDiv.className = cssClass + "-title";
@@ -223,7 +253,11 @@ export function measureLevelHeights(
                 }
                 levelContainer.appendChild(el);
                 const rect = el.getBoundingClientRect();
-                orgSizes.set(org.id, [rect.width, rect.height]);
+                orgSizes.set(org.id, {
+                    width: rect.width,
+                    height: rect.height,
+                    top: rect.top
+                });
             }
             const height = levelContainer.getBoundingClientRect().height;
             levelHeights.set(level, height);
@@ -231,6 +265,7 @@ export function measureLevelHeights(
             firstVerticalLevel === null &&
             orientations.get(level) === "vertical"
         ) {
+            firstVerticalLevel = level;
             // Find all the unique parents of this level's orgs
             const verticalContainer = document.createElement("div");
             verticalContainer.className =
@@ -247,14 +282,15 @@ export function measureLevelHeights(
             for (const org of uniqueParents) {
                 const subtreeContainer = document.createElement("div");
                 subtreeContainer.className = cssClass + "-vertical-subtree";
-                const width = orgSizes.get(org.id)![0];
-                subtreeContainer.style.maxWidth = width + "px";
+                const width = orgSizes.get(org.id)!.width;
+                subtreeContainer.style.width = (width - 20) + "px";
                 verticalContainer.appendChild(subtreeContainer);
                 for (const child of org.children || []) {
-                    if (child.level === level) {
-                        const orgSubtree = renderVerticalSubtree(
+                    if (child.level && child.level >= level) {
+                        renderVerticalSubtree(
                             child,
                             subtreeContainer,
+                            10
                         );
                     }
                 }
@@ -264,6 +300,7 @@ export function measureLevelHeights(
             levelHeights.set(level, Math.max(...verticalHeights));
         } else {
             // skip levels that are descendants of the first vertical level
+            levelHeights.set(level, 0);
         }
     }
 
