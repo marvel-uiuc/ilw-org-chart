@@ -8,6 +8,7 @@ import {
     calculateLevelOrientations,
     ConnectedOrg,
     measureOrgBoxes,
+    OrgChartConfig,
     OrgPlacement,
     TreeLevelMap,
     treeLevelOrgs,
@@ -27,20 +28,25 @@ export default class OrgChart extends LitElement {
     @property()
     width = "1200";
 
+    config: OrgChartConfig = {
+        horizontalSpacing: 40,
+        availableSpace: parseInt(this.width),
+        largeOrgSizeMultiplier: 1.5,
+        verticalChildOffset: 20,
+        verticalSpacing: 20,
+        verticalSubtreeSpacing: 10,
+        maxColWidth: 300,
+        minColWidth: 150
+    };
+
     _treeTask = new Task(this, {
         task: async ([org]) => {
             if (!org) {
                 return null;
             }
             const tree = treeLevelOrgs(org);
-            calculateLevelOrientations(tree, 150, parseInt(this.width));
-            const measured = measureOrgBoxes(
-                tree,
-                "org",
-                parseInt(this.width),
-                150,
-                300,
-            );
+            calculateLevelOrientations(tree, this.config);
+            const measured = measureOrgBoxes(tree, "ilw-org-chart", this.config);
             return {
                 tree,
                 measured,
@@ -57,6 +63,10 @@ export default class OrgChart extends LitElement {
         super();
     }
 
+    createRenderRoot() {
+        return this;
+    }
+
     private renderChildren(
         children: ConnectedOrg[],
         placements: Map<number, OrgPlacement>,
@@ -70,10 +80,10 @@ export default class OrgChart extends LitElement {
         org: ConnectedOrg,
         placements: Map<number, OrgPlacement>,
     ): TemplateResult {
-        const placement = placements.get(org.id)!;
+        let placement = placements.get(org.id)!;
         const classes = {
-            org: true,
-            "org-large": !!org.large,
+            "ilw-org-chart": true,
+            "ilw-org-chart-large": !!org.large,
         };
         const styles = {
             top: `${placement.top}px`,
@@ -88,9 +98,11 @@ export default class OrgChart extends LitElement {
                 <div class="org-title">${org.title}</div>
                 <div class="org-subtitle">${org.subtitle}</div>
             </div>
-            ${org.children && org.children.length > 0
-                ? this.renderChildren(org.children, placements)
-                : ""}
+            ${
+                org.children && org.children.length > 0
+                    ? this.renderChildren(org.children, placements)
+                    : ""
+            }
         </li>`;
     }
 
@@ -101,10 +113,11 @@ export default class OrgChart extends LitElement {
                 height = Math.max(height, placement.top + placement.height);
             }
             return html`<div
-                class="org-chart-container"
+                class="ilw-org-chart-container"
                 style="width: ${this.width}px; height: ${height + 20}px;"
             >
-                <ul class="org-chart ${this.theme}">
+                <canvas class="ilw-org-chart-canvas" width=${this.width} height=${height + 20}></canvas>
+                <ul class="ilw-org-chart ${this.theme}">
                     ${this._treeTask.value
                         ? this.renderOrg(
                               this._treeTask.value.tree.root,

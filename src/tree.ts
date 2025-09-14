@@ -14,6 +14,17 @@ export type OrgPlacement = {
     left?: number;
 };
 
+export type OrgChartConfig = {
+    horizontalSpacing: number;
+    verticalSpacing: number;
+    verticalSubtreeSpacing: number;
+    verticalChildOffset: number;
+    largeOrgSizeMultiplier: number;
+    availableSpace: number;
+    minColWidth: number;
+    maxColWidth: number;
+};
+
 export class TreeLevel {
     level: number;
     orgs: ConnectedOrg[];
@@ -96,15 +107,14 @@ export function treeLevelOrgs(org: Org): TreeLevelMap {
 
 export function calculateLevelOrientations(
     levels: TreeLevelMap,
-    minColWidth: number,
-    maxTreeWidth: number,
+    config: OrgChartConfig,
 ) {
     // First pass: assign initial orientations
     for (const [level, treeLevel] of levels.entries()) {
-        const requiredWidth = (treeLevel.orgs.length || 1) * minColWidth;
-        if (minColWidth <= 0 || maxTreeWidth <= 0) {
+        const requiredWidth = (treeLevel.orgs.length || 1) * config.minColWidth;
+        if (config.minColWidth <= 0 || config.maxColWidth <= 0) {
             treeLevel.orientation = "vertical";
-        } else if (requiredWidth <= maxTreeWidth) {
+        } else if (requiredWidth <= config.availableSpace) {
             treeLevel.orientation = "horizontal";
         } else {
             treeLevel.orientation = "vertical";
@@ -112,7 +122,6 @@ export function calculateLevelOrientations(
     }
 
     // Second pass: propagate vertical orientation to descendant levels
-    // Find all levels that are vertical and propagate
     const visited = new Set<number>();
     function propagateVertical(level: number) {
         if (visited.has(level)) return;
@@ -121,7 +130,6 @@ export function calculateLevelOrientations(
         if (!treeLevel) return;
         for (const org of treeLevel.orgs) {
             if (org.children && org.children.length > 0) {
-                // Find all children and set their levels to vertical
                 for (const child of org.children) {
                     if (child.level !== undefined) {
                         treeLevel.orientation = "vertical";
@@ -149,9 +157,7 @@ export function calculateLevelOrientations(
 export function measureOrgBoxes(
     levelsMap: TreeLevelMap,
     cssClass: string,
-    availableSpace: number,
-    minColWidth: number,
-    maxColWidth: number,
+    config: OrgChartConfig,
 ) {
     console.log("[measureOrgBoxes] Start measuring org boxes", levelsMap);
     const startTime = performance.now();
@@ -160,8 +166,9 @@ export function measureOrgBoxes(
     const container = document.createElement("div");
     const hiddenTopOffset = -9999;
     container.style.position = "absolute";
-    container.style.visibility = "hidden";
-    container.style.pointerEvents = "none";
+    container.style.background = "#111";
+    // container.style.visibility = "hidden";
+    // container.style.pointerEvents = "none";
     container.style.left = "-9999px";
     container.style.top = hiddenTopOffset + "px";
     document.body.appendChild(container);
@@ -196,10 +203,10 @@ export function measureOrgBoxes(
         // Children
         if (org.children && org.children.length > 0) {
             for (const child of org.children) {
-                const childContainer = renderVerticalSubtree(
+                renderVerticalSubtree(
                     child as ConnectedOrg,
                     parent,
-                    offset + 20,
+                    offset + config.verticalChildOffset,
                 );
             }
         }
@@ -227,29 +234,33 @@ export function measureOrgBoxes(
             const levelContainer = document.createElement("div");
             levelContainer.className =
                 cssClass + "-level " + cssClass + "-horizontal";
+            levelContainer.style.columnGap = config.horizontalSpacing + "px";
+            levelContainer.style.marginBottom = config.verticalSpacing + "px";
 
             const columnWidth = Math.min(
-                availableSpace / treeLevel.orgs.length,
-                maxColWidth,
+                config.availableSpace / treeLevel.orgs.length,
+                config.maxColWidth,
             );
 
             const largeOrgs = treeLevel.orgs.filter((org) => org.large);
             const smallOrgs = treeLevel.orgs.filter((org) => !org.large);
 
             // Divide the space so that large orgs get a bit more space
-            const totalUnits = largeOrgs.length * 1.5 + smallOrgs.length * 1.0;
-            const unitWidth = availableSpace / totalUnits;
+            const totalUnits = largeOrgs.length * config.largeOrgSizeMultiplier + smallOrgs.length * 1.0;
+            const unitWidth = (config.availableSpace - (totalUnits - 1) * config.horizontalSpacing )/ totalUnits;
             const largeOrgWidth = Math.min(
-                Math.max(unitWidth * 1.5, minColWidth),
-                maxColWidth,
+                Math.max(unitWidth * config.largeOrgSizeMultiplier, config.minColWidth),
+                config.maxColWidth,
             );
-            const smallOrgWidth = Math.min(
-                Math.max(unitWidth * 1.0, minColWidth),
-                maxColWidth,
+            let smallOrgWidth = Math.min(
+                Math.max(unitWidth * 1.0, config.minColWidth),
+                config.maxColWidth,
             );
 
-            levelContainer.style.width = availableSpace + "px";
+            levelContainer.style.width = config.availableSpace + "px";
             container.appendChild(levelContainer);
+
+            const els = new Map<number, HTMLDivElement>();
 
             for (const org of treeLevel.orgs) {
                 const el = document.createElement("div");
@@ -272,13 +283,31 @@ export function measureOrgBoxes(
                     el.appendChild(subtitleDiv);
                 }
                 levelContainer.appendChild(el);
+                els.set(org.id, el);
+            }
+
+            let maxHeight = 0;
+            for (const [id, el] of els) {
                 const rect = el.getBoundingClientRect();
-                orgSizes.set(org.id, {
+                orgSizes.set(id, {
                     width: rect.width,
                     height: rect.height,
                     top: rect.top - hiddenTopOffset,
                 });
+                maxHeight = Math.max(maxHeight, rect.height);
             }
+            if (smallOrgs.length === 0 || largeOrgs.length === 0) {
+                // If all orgs are of the same size, make them all the same height
+                for (const org of treeLevel.orgs) {
+                    const p = orgSizes.get(org.id);
+                    if (p) {
+                        const diff = maxHeight - p.height;
+                        p.height = maxHeight;
+                        p.top -= diff / 2; // center vertically
+                    }
+                }
+            }
+
             const height = levelContainer.getBoundingClientRect().height;
             levelHeights.set(level, height);
         } else if (
@@ -290,7 +319,7 @@ export function measureOrgBoxes(
             const verticalContainer = document.createElement("div");
             verticalContainer.className =
                 cssClass + "-level " + cssClass + "-vertical";
-            verticalContainer.style.width = availableSpace + "px";
+            verticalContainer.style.width = config.availableSpace + "px";
             container.appendChild(verticalContainer);
             const uniqueParents = new Set<ConnectedOrg>();
             for (const org of treeLevel.orgs) {
@@ -303,11 +332,12 @@ export function measureOrgBoxes(
                 const subtreeContainer = document.createElement("div");
                 subtreeContainer.className = cssClass + "-vertical-subtree";
                 const width = orgSizes.get(org.id)!.width;
-                subtreeContainer.style.width = width - 20 + "px";
+                subtreeContainer.style.width = width - config.verticalChildOffset + "px";
+                subtreeContainer.style.gap = config.verticalSubtreeSpacing + "px";
                 verticalContainer.appendChild(subtreeContainer);
                 for (const child of org.children || []) {
                     if (child.level && child.level >= level) {
-                        renderVerticalSubtree(child, subtreeContainer, 10);
+                        renderVerticalSubtree(child, subtreeContainer, config.verticalChildOffset);
                     }
                 }
                 const height = subtreeContainer.getBoundingClientRect().height;
@@ -320,7 +350,11 @@ export function measureOrgBoxes(
         }
     }
 
-    calculateHorizontalPositions(levelsMap, orgSizes, availableSpace);
+    const updated = calculateHorizontalPositions(
+        levelsMap,
+        orgSizes,
+        config,
+    );
     // document.body.removeChild(container);
     const endTime = performance.now();
     const duration = endTime - startTime;
@@ -328,7 +362,9 @@ export function measureOrgBoxes(
         `[measureOrgBoxes] Finished measuring. Duration: ${duration.toFixed(2)} ms`,
         orgSizes,
     );
-
+    console.log("[measureOrgBoxes] Measured org sizes:", orgSizes);
+    console.log("[measureOrgBoxes] Level heights:", levelHeights);
+    console.log("[measureOrgBoxes] Updated placements:", updated);
 
     return orgSizes;
 }
@@ -336,80 +372,73 @@ export function measureOrgBoxes(
 export function calculateHorizontalPositions(
     levelsMap: TreeLevelMap,
     placements: Map<number, OrgPlacement>,
-    availableSpace: number,
+    config: OrgChartConfig,
 ) {
-    // Helper to center an org horizontally
     function centerOrg(orgId: number, containerWidth: number) {
         const placement = placements.get(orgId);
         if (!placement) return 0;
         return Math.max(0, (containerWidth - placement.width) / 2);
     }
 
-    // Center root org and arrange top-level orgs (root + children) around it
     if (!levelsMap.root) return;
-    // (rootPlacement will be declared below for rootOrg)
-
-    // Find top level (level 0 or root.level)
     const rootLevel = levelsMap.root.level ?? 0;
     const topLevel = levelsMap.get(rootLevel);
     if (!topLevel) return;
 
-    // Identify top-level orgs: root and its children that are also at top level
-    const spacing = 20;
     const topOrgs = topLevel.orgs;
     if (topOrgs.length === 0) return;
 
-    // Place root at center
     const rootPlacementIdx = 0;
     const rootOrg = topOrgs[0];
     const rootPlacement = placements.get(rootOrg.id);
     if (!rootPlacement) return;
-    let rootLeft = centerOrg(rootOrg.id, availableSpace);
+    let rootLeft = centerOrg(rootOrg.id, config.availableSpace);
 
-    // Only up to 3 orgs at top level
     let lefts: number[] = [];
     lefts[0] = rootLeft;
-    // Place second org to left
     if (topOrgs.length > 1) {
         const p = placements.get(topOrgs[1].id);
         if (p) {
-            lefts[1] = rootLeft - (p.width + spacing);
+            lefts[1] = rootLeft - (p.width + config.horizontalSpacing);
         }
     }
-    // Place third org to right
     if (topOrgs.length > 2) {
         const p = placements.get(topOrgs[2].id);
         if (p) {
-            lefts[2] = rootLeft + rootPlacement.width + spacing;
+            lefts[2] = rootLeft + rootPlacement.width + config.horizontalSpacing;
         }
     }
 
-    // If any org is out of bounds, shift all as needed
-    let minLeft = Math.min(...lefts.filter(x => x !== undefined));
-    let maxRight = Math.max(...topOrgs.map((org, i) => {
-        const p = placements.get(org.id);
-        return p && lefts[i] !== undefined ? lefts[i] + p.width : 0;
-    }));
+    let minLeft = Math.min(...lefts.filter((x) => x !== undefined));
+    let maxRight = Math.max(
+        ...topOrgs.map((org, i) => {
+            const p = placements.get(org.id);
+            return p && lefts[i] !== undefined ? lefts[i] + p.width : 0;
+        }),
+    );
     let shift = 0;
     if (minLeft < 0) {
         shift = -minLeft;
-    } else if (maxRight > availableSpace) {
-        shift = availableSpace - maxRight;
+    } else if (maxRight > config.availableSpace) {
+        shift = config.availableSpace - maxRight;
     }
-    // Apply shift
-    for (let i = 0; i < topOrgs.length; i++) {
-        const p = placements.get(topOrgs[i].id);
-        if (p && lefts[i] !== undefined) {
-            p.left = lefts[i] + shift;
+    rootPlacement.left = lefts[0] + shift;
+    if (topOrgs.length > 1) {
+        const p = placements.get(topOrgs[1].id);
+        if (p && lefts[1] !== undefined) {
+            p.left = lefts[1] + shift;
         }
     }
-
-    // For each level, position orgs
+    if (topOrgs.length > 2) {
+        const p = placements.get(topOrgs[2].id);
+        if (p && lefts[2] !== undefined) {
+            p.left = lefts[2] + shift;
+        }
+    }
     let skipVerticalLevels = false;
     for (const [level, treeLevel] of levelsMap.orderedEntries()) {
-        if (level === rootLevel) continue; // already handled
+        if (level === rootLevel) continue;
         if (skipVerticalLevels) {
-            // Skip vertical levels until next horizontal
             if (treeLevel.orientation === "horizontal") {
                 skipVerticalLevels = false;
             } else {
@@ -417,7 +446,6 @@ export function calculateHorizontalPositions(
             }
         }
         if (treeLevel.orientation === "horizontal") {
-            // Group orgs by parent
             const parentGroups = new Map<number, ConnectedOrg[]>();
             for (const org of treeLevel.orgs) {
                 if (org.parent) {
@@ -426,43 +454,42 @@ export function calculateHorizontalPositions(
                     parentGroups.get(pid)!.push(org);
                 }
             }
-            const groupBounds: { left: number; right: number, pid: number }[] = [];
+            const groupBounds: { left: number; right: number; pid: number }[] = [];
             for (const [pid, group] of parentGroups.entries()) {
-                // Place orgs in group horizontally in order
                 let totalWidth = 0;
                 for (const org of group) {
                     const p = placements.get(org.id);
                     if (p) totalWidth += p.width;
                 }
-                totalWidth += spacing * (group.length - 1);
-                // Center group under parent
+                totalWidth += config.horizontalSpacing * (group.length - 1);
                 const parentPlacement = placements.get(pid);
-                let groupLeft = parentPlacement && parentPlacement.left !== undefined
-                    ? parentPlacement.left + (parentPlacement.width - totalWidth) / 2
-                    : centerOrg(group[0].id, availableSpace);
-                // Clamp groupLeft if out of bounds
+                let groupLeft =
+                    parentPlacement && parentPlacement.left !== undefined
+                        ? parentPlacement.left + (parentPlacement.width - totalWidth) / 2
+                        : centerOrg(group[0].id, config.availableSpace);
                 if (groupLeft < 0) groupLeft = 0;
-                if (groupLeft + totalWidth > availableSpace) groupLeft = availableSpace - totalWidth;
-                // Place each org
+                if (groupLeft + totalWidth > config.availableSpace)
+                    groupLeft = config.availableSpace - totalWidth;
                 let offset = groupLeft;
                 for (const org of group) {
                     const p = placements.get(org.id);
                     if (p) {
                         p.left = offset;
-                        offset += p.width + spacing;
+                        offset += p.width + config.horizontalSpacing;
                     }
                 }
-                groupBounds.push({ pid, left: groupLeft, right: groupLeft + totalWidth });
+                groupBounds.push({
+                    pid,
+                    left: groupLeft,
+                    right: groupLeft + totalWidth,
+                });
             }
-            // If any groups overlap, shift them apart equally, but also keeping within bounds
             groupBounds.sort((a, b) => a.left - b.left);
             for (let i = 1; i < groupBounds.length; i++) {
                 const prev = groupBounds[i - 1];
                 const curr = groupBounds[i];
-                if (prev.right + spacing > curr.left) {
-                    // Overlap detected, shift curr to the right
-                    const overlap = prev.right + spacing - curr.left;
-                    // Shift current group and all subsequent groups
+                if (prev.right + config.horizontalSpacing > curr.left) {
+                    const overlap = prev.right + config.horizontalSpacing - curr.left;
                     for (let j = i; j < groupBounds.length; j++) {
                         const gb = groupBounds[j];
                         const p = placements.get(gb.pid);
@@ -474,43 +501,45 @@ export function calculateHorizontalPositions(
                     }
                 }
             }
-            // After shifting, ensure all groups are within bounds
-            let overallMinLeft = Math.min(...groupBounds.map(gb => gb.left));
-            let overallMaxRight = Math.max(...groupBounds.map(gb => gb.right));
+            let overallMinLeft = Math.min(...groupBounds.map((gb) => gb.left));
+            let overallMaxRight = Math.max(...groupBounds.map((gb) => gb.right));
             let overallShift = 0;
             if (overallMinLeft < 0) {
                 overallShift = -overallMinLeft;
-            } else if (overallMaxRight > availableSpace) {
-                overallShift = availableSpace - overallMaxRight;
+            } else if (overallMaxRight > config.availableSpace) {
+                overallShift = config.availableSpace - overallMaxRight;
             }
             if (overallShift !== 0) {
-                for (const gb of groupBounds) {
-                    const p = placements.get(gb.pid);
-                    if (p && p.left !== undefined) {
-                        p.left += overallShift;
+                for (const [key, val] of parentGroups.entries()) {
+                    const gb = groupBounds.find((g) => g.pid === key);
+                    for (const org of val) {
+                        const p = placements.get(org.id);
+                        if (p && p.left !== undefined && gb) {
+                            p.left += overallShift;
+                        }
                     }
                 }
             }
         } else if (treeLevel.orientation === "vertical") {
-            // First vertical level in a series
             if (!skipVerticalLevels) {
-                // For each org, align subtree to parent's left + 20px
                 for (const org of treeLevel.orgs) {
                     if (org.parent) {
                         const parentPlacement = placements.get(org.parent.id);
-                        if (parentPlacement && parentPlacement.left !== undefined) {
+                        if (
+                            parentPlacement &&
+                            parentPlacement.left !== undefined
+                        ) {
                             const p = placements.get(org.id);
                             if (p) {
-                                p.left = parentPlacement.left + 20;
+                                p.left = parentPlacement.left + config.verticalChildOffset;
                             }
                         }
                     }
                 }
-                // For all descendants, each level gets a further 20px
-                // No need to track verticalStartLevel or verticalParentLeft
-                // Mark to skip remaining vertical levels until next horizontal
                 skipVerticalLevels = true;
             }
         }
     }
+    console.log("rootPlacement after all levels", rootPlacement);
+    return placements;
 }

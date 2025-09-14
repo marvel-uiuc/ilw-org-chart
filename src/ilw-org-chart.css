@@ -1,32 +1,52 @@
-.org {
+.ilw-org-chart {
     background-color: #eee;
-    margin-top: 10px;
-    margin-bottom: 10px;
     padding: 10px;
     box-sizing: border-box;
     text-align: center;
     font-size: 16px;
 }
-.org-large {
-    padding: 15px;
-    margin: 5px;
+.ilw-org-chart-large {
     font-size: 18px;
+    padding: 15px;
 }
 
-.org-level {
+.ilw-org-chart-level {
     display: flex;
     justify-content: center;
-    align-items: stretch;
-    margin: 5px 0;
-    column-gap: 20px;
-}
-.org-vertical {
     align-items: flex-start;
 }
-.org-vertical-subtree {
+.ilw-org-chart-level.ilw-org-chart-horizontal {
+    align-items: center;
+}
+
+.ilw-org-chart-vertical-subtree {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding-left: 5px;
     box-sizing: border-box;
+}
+.ilw-org-chart-container {
+    position: relative;
+    .ilw-org-chart {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        flex-direction: column;
+        position: absolute;
+    }
+    ul {
+        list-style-type: none;
+        padding-left: 0;
+    }
+    li {
+        margin: 0;
+        padding: 0;
+    }
+    .ilw-org-chart-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+    }
 }
