@@ -14,6 +14,10 @@ export type OrgPlacement = {
     left?: number;
 };
 
+export type OrgLine = {
+    points: { x: number; y: number }[];
+};
+
 export type OrgChartConfig = {
     horizontalSpacing: number;
     verticalSpacing: number;
@@ -184,6 +188,9 @@ export function measureOrgBoxes(
     ): HTMLElement {
         const orgContainer = document.createElement("div");
         orgContainer.className = cssClass + " " + cssClass + "-vertical-org";
+        if (org.large) {
+            orgContainer.className += " " + cssClass + "-large";
+        }
         orgContainer.style.marginLeft = offset + "px";
         orgContainer.style.boxSizing = "border-box";
         orgContainer.style.width = "calc(100% - " + offset + "px)";
@@ -246,10 +253,18 @@ export function measureOrgBoxes(
             const smallOrgs = treeLevel.orgs.filter((org) => !org.large);
 
             // Divide the space so that large orgs get a bit more space
-            const totalUnits = largeOrgs.length * config.largeOrgSizeMultiplier + smallOrgs.length * 1.0;
-            const unitWidth = (config.availableSpace - (totalUnits - 1) * config.horizontalSpacing )/ totalUnits;
+            const totalUnits =
+                largeOrgs.length * config.largeOrgSizeMultiplier +
+                smallOrgs.length * 1.0;
+            const unitWidth =
+                (config.availableSpace -
+                    (totalUnits - 1) * config.horizontalSpacing) /
+                totalUnits;
             const largeOrgWidth = Math.min(
-                Math.max(unitWidth * config.largeOrgSizeMultiplier, config.minColWidth),
+                Math.max(
+                    unitWidth * config.largeOrgSizeMultiplier,
+                    config.minColWidth,
+                ),
                 config.maxColWidth,
             );
             let smallOrgWidth = Math.min(
@@ -332,12 +347,18 @@ export function measureOrgBoxes(
                 const subtreeContainer = document.createElement("div");
                 subtreeContainer.className = cssClass + "-vertical-subtree";
                 const width = orgSizes.get(org.id)!.width;
-                subtreeContainer.style.width = width - config.verticalChildOffset + "px";
-                subtreeContainer.style.gap = config.verticalSubtreeSpacing + "px";
+                subtreeContainer.style.width =
+                    width - config.verticalChildOffset + "px";
+                subtreeContainer.style.gap =
+                    config.verticalSubtreeSpacing + "px";
                 verticalContainer.appendChild(subtreeContainer);
                 for (const child of org.children || []) {
                     if (child.level && child.level >= level) {
-                        renderVerticalSubtree(child, subtreeContainer, config.verticalChildOffset);
+                        renderVerticalSubtree(
+                            child,
+                            subtreeContainer,
+                            config.verticalChildOffset,
+                        );
                     }
                 }
                 const height = subtreeContainer.getBoundingClientRect().height;
@@ -350,11 +371,7 @@ export function measureOrgBoxes(
         }
     }
 
-    const updated = calculateHorizontalPositions(
-        levelsMap,
-        orgSizes,
-        config,
-    );
+    const updated = calculateHorizontalPositions(levelsMap, orgSizes, config);
     // document.body.removeChild(container);
     const endTime = performance.now();
     const duration = endTime - startTime;
@@ -378,6 +395,21 @@ export function calculateHorizontalPositions(
         const placement = placements.get(orgId);
         if (!placement) return 0;
         return Math.max(0, (containerWidth - placement.width) / 2);
+    }
+
+    function applyVerticalLeft(orgs: ConnectedOrg[], left: number) {
+        for (const org of orgs) {
+            const placement = placements.get(org.id);
+            if (placement) {
+                placement.left = left;
+            }
+            if (org.children && org.children.length > 0) {
+                applyVerticalLeft(
+                    org.children,
+                    left + config.verticalChildOffset,
+                );
+            }
+        }
     }
 
     if (!levelsMap.root) return;
@@ -405,7 +437,8 @@ export function calculateHorizontalPositions(
     if (topOrgs.length > 2) {
         const p = placements.get(topOrgs[2].id);
         if (p) {
-            lefts[2] = rootLeft + rootPlacement.width + config.horizontalSpacing;
+            lefts[2] =
+                rootLeft + rootPlacement.width + config.horizontalSpacing;
         }
     }
 
@@ -454,7 +487,8 @@ export function calculateHorizontalPositions(
                     parentGroups.get(pid)!.push(org);
                 }
             }
-            const groupBounds: { left: number; right: number; pid: number }[] = [];
+            const groupBounds: { left: number; right: number; pid: number }[] =
+                [];
             for (const [pid, group] of parentGroups.entries()) {
                 let totalWidth = 0;
                 for (const org of group) {
@@ -465,7 +499,8 @@ export function calculateHorizontalPositions(
                 const parentPlacement = placements.get(pid);
                 let groupLeft =
                     parentPlacement && parentPlacement.left !== undefined
-                        ? parentPlacement.left + (parentPlacement.width - totalWidth) / 2
+                        ? parentPlacement.left +
+                          (parentPlacement.width - totalWidth) / 2
                         : centerOrg(group[0].id, config.availableSpace);
                 if (groupLeft < 0) groupLeft = 0;
                 if (groupLeft + totalWidth > config.availableSpace)
@@ -489,7 +524,8 @@ export function calculateHorizontalPositions(
                 const prev = groupBounds[i - 1];
                 const curr = groupBounds[i];
                 if (prev.right + config.horizontalSpacing > curr.left) {
-                    const overlap = prev.right + config.horizontalSpacing - curr.left;
+                    const overlap =
+                        prev.right + config.horizontalSpacing - curr.left;
                     for (let j = i; j < groupBounds.length; j++) {
                         const gb = groupBounds[j];
                         const p = placements.get(gb.pid);
@@ -502,7 +538,9 @@ export function calculateHorizontalPositions(
                 }
             }
             let overallMinLeft = Math.min(...groupBounds.map((gb) => gb.left));
-            let overallMaxRight = Math.max(...groupBounds.map((gb) => gb.right));
+            let overallMaxRight = Math.max(
+                ...groupBounds.map((gb) => gb.right),
+            );
             let overallShift = 0;
             if (overallMinLeft < 0) {
                 overallShift = -overallMinLeft;
@@ -522,24 +560,133 @@ export function calculateHorizontalPositions(
             }
         } else if (treeLevel.orientation === "vertical") {
             if (!skipVerticalLevels) {
+                const parentGroups = new Map<number, ConnectedOrg[]>();
                 for (const org of treeLevel.orgs) {
                     if (org.parent) {
-                        const parentPlacement = placements.get(org.parent.id);
-                        if (
-                            parentPlacement &&
-                            parentPlacement.left !== undefined
-                        ) {
-                            const p = placements.get(org.id);
-                            if (p) {
-                                p.left = parentPlacement.left + config.verticalChildOffset;
-                            }
-                        }
+                        const pid = org.parent.id;
+                        if (!parentGroups.has(pid)) parentGroups.set(pid, []);
+                        parentGroups.get(pid)!.push(org);
                     }
                 }
+                for (const org of treeLevel.orgs) {
+                    if (parentGroups.size > 1) {
+                        const parentPlacement = placements.get(
+                            org!.parent!.id,
+                        )!;
+                        applyVerticalLeft(
+                            [org],
+                            parentPlacement.left! + config.verticalChildOffset,
+                        );
+                    } else {
+                        applyVerticalLeft(
+                            [org],
+                            config.availableSpace / 2 -
+                                (placements.get(org.id)?.width || 0) / 2,
+                        );
+                    }
+                }
+
+                // skip all levels until we find a horizontal level
                 skipVerticalLevels = true;
             }
         }
     }
     console.log("rootPlacement after all levels", rootPlacement);
     return placements;
+}
+
+export function calculateLinesBetweenOrgs(
+    levelsMap: TreeLevelMap,
+    placements: Map<number, OrgPlacement>,
+    config: OrgChartConfig,
+) {
+    if (!levelsMap.root) return [];
+    const lines: OrgLine[] = [];
+    function traverse(org: ConnectedOrg) {
+        const orgLines = calculateLinesForOrg(levelsMap, org, placements, config);
+        lines.push(...orgLines);
+        if (org.children && org.children.length > 0) {
+            for (const child of org.children) {
+                traverse(child);
+            }
+        }
+    }
+    traverse(levelsMap.root);
+    return lines;
+}
+
+function calculateLinesForOrg(
+    levelsMap: TreeLevelMap,
+    org: ConnectedOrg,
+    placements: Map<number, OrgPlacement>,
+    config: OrgChartConfig,
+) {
+    const lines: OrgLine[] = [];
+    const placement = placements.get(org.id);
+    if (!placement) return lines;
+    if (org.children && org.children.length > 0) {
+        // Determine if org is in a vertical level
+        const orgLevelObj = levelsMap.get(org.level ?? 0);
+        const isVerticalLevel = orgLevelObj && orgLevelObj.orientation === "vertical";
+        for (const child of org.children) {
+            const childPlacement = placements.get(child.id);
+            if (childPlacement) {
+                const line: OrgLine = { points: [] };
+                if (child.level === org.level) {
+                    // Draw a horizontal line from parent's center to child's center
+                    line.points.push({
+                        x: (placement.left || 0) + placement.width / 2,
+                        y: placement.top + placement.height / 2,
+                    });
+                    line.points.push({
+                        x: (childPlacement.left || 0) + childPlacement.width / 2,
+                        y: childPlacement.top + childPlacement.height / 2,
+                    });
+                } else if (isVerticalLevel) {
+                    // Start point: half of verticalChildOffset from the left of parent
+                    const startX = (placement.left || 0) + config.verticalChildOffset / 2;
+                    const midY = childPlacement.top + childPlacement.height / 2;
+                    // Go down to the middle of the child
+                    line.points.push({
+                        x: startX,
+                        y: placement.top + placement.height,
+                    });
+                    line.points.push({
+                        x: startX,
+                        y: midY,
+                    });
+                    // Go right to connect to the child
+                    line.points.push({
+                        x: (childPlacement.left || 0) + childPlacement.width / 2,
+                        y: midY,
+                    });
+                } else {
+                    // Start point: bottom center of parent
+                    line.points.push({
+                        x: (placement.left || 0) + placement.width / 2,
+                        y: placement.top + placement.height,
+                    });
+                    // Vertical line down to the level gap above the child
+                    const midY = childPlacement.top - config.verticalSpacing / 2;
+                    line.points.push({
+                        x: (placement.left || 0) + placement.width / 2,
+                        y: midY,
+                    });
+                    // Horizontal line to child's center
+                    line.points.push({
+                        x: (childPlacement.left || 0) + childPlacement.width / 2,
+                        y: midY,
+                    });
+                    // Vertical line down to top of child
+                    line.points.push({
+                        x: (childPlacement.left || 0) + childPlacement.width / 2,
+                        y: childPlacement.top,
+                    });
+                }
+                lines.push(line);
+            }
+        }
+    }
+
+    return lines;
 }

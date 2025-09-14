@@ -1,11 +1,18 @@
-import { html, LitElement, TemplateResult, unsafeCSS } from "lit";
+import {
+    html,
+    LitElement,
+    PropertyValues,
+    TemplateResult,
+    unsafeCSS,
+} from "lit";
 // @ts-ignore
 import styles from "./ilw-org-chart.styles.css?inline";
 import "./ilw-org-chart.css";
-import { customElement, property, state } from "lit/decorators.js";
+import { customElement, property, query, state } from "lit/decorators.js";
 import { Org } from "./Org";
 import {
     calculateLevelOrientations,
+    calculateLinesBetweenOrgs,
     ConnectedOrg,
     measureOrgBoxes,
     OrgChartConfig,
@@ -28,15 +35,18 @@ export default class OrgChart extends LitElement {
     @property()
     width = "1200";
 
+    @query(".ilw-org-chart-canvas")
+    canvas!: HTMLCanvasElement;
+
     config: OrgChartConfig = {
         horizontalSpacing: 40,
-        availableSpace: parseInt(this.width),
+        availableSpace: 1200,
         largeOrgSizeMultiplier: 1.5,
         verticalChildOffset: 20,
         verticalSpacing: 20,
-        verticalSubtreeSpacing: 10,
+        verticalSubtreeSpacing: 20,
         maxColWidth: 300,
-        minColWidth: 150
+        minColWidth: 150,
     };
 
     _treeTask = new Task(this, {
@@ -44,12 +54,23 @@ export default class OrgChart extends LitElement {
             if (!org) {
                 return null;
             }
+            this.config.availableSpace = parseInt(this.width);
             const tree = treeLevelOrgs(org);
             calculateLevelOrientations(tree, this.config);
-            const measured = measureOrgBoxes(tree, "ilw-org-chart", this.config);
+            const measured = measureOrgBoxes(
+                tree,
+                "ilw-org-chart",
+                this.config,
+            );
+            const lines = calculateLinesBetweenOrgs(
+                tree,
+                measured,
+                this.config,
+            );
             return {
                 tree,
                 measured,
+                lines,
             };
         },
         args: () => [this.org] as const,
@@ -116,8 +137,12 @@ export default class OrgChart extends LitElement {
                 class="ilw-org-chart-container"
                 style="width: ${this.width}px; height: ${height + 20}px;"
             >
-                <canvas class="ilw-org-chart-canvas" width=${this.width} height=${height + 20}></canvas>
-                <ul class="ilw-org-chart ${this.theme}">
+                <canvas
+                    class="ilw-org-chart-canvas"
+                    width=${this.width}
+                    height=${height + 20}
+                ></canvas>
+                <ul class="ilw-org-chart-top ${this.theme}">
                     ${this._treeTask.value
                         ? this.renderOrg(
                               this._treeTask.value.tree.root,
@@ -128,6 +153,32 @@ export default class OrgChart extends LitElement {
             </div>`;
         } else {
             return html`<div>No organization data provided.</div>`;
+        }
+    }
+
+    protected updated(_changedProperties: PropertyValues): void {
+        super.updated(_changedProperties);
+
+        const ctx = this.canvas?.getContext("2d");
+        if (ctx) {
+            ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            ctx.strokeStyle = "#000000";
+            ctx.lineWidth = 4;
+
+            if (this._treeTask.value?.lines) {
+                for (const line of this._treeTask.value.lines) {
+                    ctx.beginPath();
+                    let start = line.points[0];
+                    ctx.moveTo(start.x, start.y);
+                    for (let i = 1; i < line.points.length; i++) {
+                        const point = line.points[i];
+                        ctx.lineTo(point.x, point.y);
+                    }
+                    ctx.lineJoin = "round";
+                    
+                    ctx.stroke();
+                }
+            }
         }
     }
 }
