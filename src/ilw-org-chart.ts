@@ -1,10 +1,20 @@
-import { html, LitElement, unsafeCSS } from "lit";
+import { html, LitElement, TemplateResult, unsafeCSS } from "lit";
 // @ts-ignore
 import styles from "./ilw-org-chart.styles.css?inline";
 import "./ilw-org-chart.css";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import { Org } from "./Org";
-import { calculateLevelOrientations, measureLevelHeights, treeLevelOrgs } from "./tree";
+import {
+    calculateLevelOrientations,
+    ConnectedOrg,
+    measureOrgBoxes,
+    OrgPlacement,
+    TreeLevelMap,
+    treeLevelOrgs,
+} from "./tree";
+import { Task } from "@lit/task";
+import { classMap } from "lit/directives/class-map.js";
+import { styleMap } from "lit/directives/style-map.js";
 
 @customElement("ilw-org-chart")
 export default class OrgChart extends LitElement {
@@ -15,7 +25,29 @@ export default class OrgChart extends LitElement {
     org: Org | null = null;
 
     @property()
-    width = "1200"
+    width = "1200";
+
+    _treeTask = new Task(this, {
+        task: async ([org]) => {
+            if (!org) {
+                return null;
+            }
+            const tree = treeLevelOrgs(org);
+            calculateLevelOrientations(tree, 150, parseInt(this.width));
+            const measured = measureOrgBoxes(
+                tree,
+                "org",
+                parseInt(this.width),
+                150,
+                300,
+            );
+            return {
+                tree,
+                measured,
+            };
+        },
+        args: () => [this.org] as const,
+    });
 
     static get styles() {
         return unsafeCSS(styles);
@@ -25,17 +57,65 @@ export default class OrgChart extends LitElement {
         super();
     }
 
+    private renderChildren(
+        children: ConnectedOrg[],
+        placements: Map<number, OrgPlacement>,
+    ): TemplateResult {
+        return html`<ul class="org-children">
+            ${children.map((child) => this.renderOrg(child, placements))}
+        </ul>`;
+    }
+
+    private renderOrg(
+        org: ConnectedOrg,
+        placements: Map<number, OrgPlacement>,
+    ): TemplateResult {
+        const placement = placements.get(org.id)!;
+        const classes = {
+            org: true,
+            "org-large": !!org.large,
+        };
+        const styles = {
+            top: `${placement.top}px`,
+            left: `${placement.left}px`,
+            width: `${placement.width}px`,
+            height: `${placement.height}px`,
+        };
+        return html`<li
+            class="org-container""
+        >
+            <div class=${classMap(classes)} style=${styleMap(styles)}>
+                <div class="org-title">${org.title}</div>
+                <div class="org-subtitle">${org.subtitle}</div>
+            </div>
+            ${org.children && org.children.length > 0
+                ? this.renderChildren(org.children, placements)
+                : ""}
+        </li>`;
+    }
+
     render() {
-        const widths = treeLevelOrgs(this.org!);
-        const oriented = calculateLevelOrientations(widths, 150, parseInt(this.width));
-        console.log(Object.fromEntries(oriented.entries()));
-        const measured = measureLevelHeights(widths, 'org', parseInt(this.width), 150, 300, oriented);
-        console.log(measured);
-        return html` <div>
-            <ul class="org-chart ${this.theme}">
-                
-            </ul>
-        </div> `;
+        if (this._treeTask.value?.tree?.root) {
+            let height = 0;
+            for (const placement of this._treeTask.value.measured.values()) {
+                height = Math.max(height, placement.top + placement.height);
+            }
+            return html`<div
+                class="org-chart-container"
+                style="width: ${this.width}px; height: ${height + 20}px;"
+            >
+                <ul class="org-chart ${this.theme}">
+                    ${this._treeTask.value
+                        ? this.renderOrg(
+                              this._treeTask.value.tree.root,
+                              this._treeTask.value.measured,
+                          )
+                        : ""}
+                </ul>
+            </div>`;
+        } else {
+            return html`<div>No organization data provided.</div>`;
+        }
     }
 }
 

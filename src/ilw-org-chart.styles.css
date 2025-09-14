@@ -1,9 +1,27 @@
-/* Styleable variables are in the base layer so they can be overridden easily */
-@layer base {
-    :host {
-
-    }
+.org {
+    background-color: #eee;
+    padding: 10px;
+    box-sizing: border-box;
+    text-align: center;
+    font-size: 16px;
+    position: absolute
 }
-
-:host {
+.org-large {
+    padding: 15px;
+    font-size: 18px;
+}
+.org-tree-container {
+    position: relative;
+}
+ul {
+    list-style-type: none;
+    padding-left: 0;
+}
+li {
+    margin: 0;
+    padding: 0;
+}
+.org-box {
+    position: relative;
+    border: 1px solid lightgray;
 }
