@@ -492,14 +492,14 @@ export function calculateHorizontalPositions(
     if (topOrgs.length > 1) {
         const p = placements.get(topOrgs[1].id);
         if (p) {
-            lefts[1] = rootLeft - (p.width + config.horizontalSpacing);
+            lefts[1] =
+                rootLeft + rootPlacement.width + config.horizontalSpacing;
         }
     }
     if (topOrgs.length > 2) {
         const p = placements.get(topOrgs[2].id);
         if (p) {
-            lefts[2] =
-                rootLeft + rootPlacement.width + config.horizontalSpacing;
+            lefts[2] = rootLeft - (p.width + config.horizontalSpacing);
         }
     }
 
@@ -754,7 +754,7 @@ function calculateLinesForOrg(
                             childPlacement.width / 2,
                         y: midY,
                     });
-                } 
+                }
                 // Otherwise the parent is in a horizontal level
                 else {
                     // Start point: bottom center of parent
