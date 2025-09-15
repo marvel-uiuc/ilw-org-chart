@@ -1,5 +1,8 @@
 import { Org } from "./Org";
 
+/**
+ * Org from user input with additional properties for tree rendering.
+ */
 export interface ConnectedOrg extends Org {
     id: number;
     parent?: ConnectedOrg;
@@ -7,6 +10,9 @@ export interface ConnectedOrg extends Org {
     children?: ConnectedOrg[];
 }
 
+/**
+ * Placement and size of an org box in the chart.
+ */
 export type OrgPlacement = {
     width: number;
     height: number;
@@ -14,10 +20,16 @@ export type OrgPlacement = {
     left?: number;
 };
 
+/**
+ * Points for a line connecting two orgs.
+ */
 export type OrgLine = {
     points: { x: number; y: number }[];
 };
 
+/**
+ * Configuration for rendering the org chart.
+ */
 export type OrgChartConfig = {
     horizontalSpacing: number;
     verticalSpacing: number;
@@ -29,6 +41,9 @@ export type OrgChartConfig = {
     maxColWidth: number;
 };
 
+/**
+ * Orgs grouped by their level in the tree.
+ */
 export class TreeLevel {
     level: number;
     orgs: ConnectedOrg[];
@@ -39,6 +54,9 @@ export class TreeLevel {
     }
 }
 
+/**
+ * Map of tree levels to their orgs, with helper methods.
+ */
 export class TreeLevelMap extends Map<number, TreeLevel> {
     root: ConnectedOrg | null = null;
 
@@ -47,8 +65,19 @@ export class TreeLevelMap extends Map<number, TreeLevel> {
     }
 }
 
+/**
+ * Unique ID generator for ConnectedOrgs.
+ */
 let orgIdCount = 1;
 
+/**
+ * Place orgs to horizontal levels based on their hierarchy and weights.
+ *
+ * Root is always in level 0, and ascending levels go down from there.
+ * Two children of the root can stay in level 0 if they have weight -1.
+ *
+ * @param org The root org
+ */
 export function treeLevelOrgs(org: Org): TreeLevelMap {
     const levelOrgs = new TreeLevelMap();
 
@@ -109,6 +138,13 @@ export function treeLevelOrgs(org: Org): TreeLevelMap {
     return levelOrgs;
 }
 
+/**
+ * Calculate the orientation (horizontal/vertical) for each level in the org chart.
+ *
+ * A level is horizontal if all its orgs can fit within availableSpace
+ * given minColWidth. If any org in a level is vertical, all its descendant
+ * levels must also be vertical.
+ */
 export function calculateLevelOrientations(
     levels: TreeLevelMap,
     config: OrgChartConfig,
@@ -152,11 +188,15 @@ export function calculateLevelOrientations(
 
 /**
  * Measure the rendered sizes and vertical positions of org boxes in the tree.
- * @param levelsMap TreeLevelOrgsMap - orgs grouped by level
- * @param cssClass string - CSS class to apply for measurement
- * @param availableSpace number - available width in px
- * @param minColWidth number - minimum column width in px
- * @param orientations LevelOrientationsMap - orientation for each level
+ *
+ * This function uses the browser's inherent layout engine to measure the sizes
+ * and vertical placement by placing the orgs based on their vertical level. With a
+ * few CSS rules this correctly handles text wrapping, font sizes, padding, etc.
+ *
+ * Horizontal placement is calculated separately after measuring because it's not
+ * possible to do with pure CSS.
+ *
+ * The CSS class is applied so that style changes will get reflected correctly.
  */
 export function measureOrgBoxes(
     levelsMap: TreeLevelMap,
@@ -171,14 +211,14 @@ export function measureOrgBoxes(
     const hiddenTopOffset = -9999;
     container.style.position = "absolute";
     container.style.background = "#111";
-    // container.style.visibility = "hidden";
-    // container.style.pointerEvents = "none";
+    container.style.visibility = "hidden";
+    container.style.pointerEvents = "none";
     container.style.left = "-9999px";
     container.style.top = hiddenTopOffset + "px";
     document.body.appendChild(container);
 
+    // Track measurements by org ID
     const orgSizes = new Map<number, OrgPlacement>();
-    const levelHeights = new Map();
 
     // Helper to recursively render vertical sub-tree
     function renderVerticalSubtree(
@@ -191,15 +231,14 @@ export function measureOrgBoxes(
         if (org.large) {
             orgContainer.className += " " + cssClass + "-large";
         }
+        // Offset subsequent vertical levels to the right
         orgContainer.style.marginLeft = offset + "px";
         orgContainer.style.boxSizing = "border-box";
         orgContainer.style.width = "calc(100% - " + offset + "px)";
-        // Title
         const titleDiv = document.createElement("div");
         titleDiv.className = cssClass + "-title";
         titleDiv.textContent = org.title;
         orgContainer.appendChild(titleDiv);
-        // Subtitle
         if (org.subtitle) {
             const subtitleDiv = document.createElement("div");
             subtitleDiv.className = cssClass + "-subtitle";
@@ -207,7 +246,6 @@ export function measureOrgBoxes(
             orgContainer.appendChild(subtitleDiv);
         }
         parent.appendChild(orgContainer);
-        // Children
         if (org.children && org.children.length > 0) {
             for (const child of org.children) {
                 renderVerticalSubtree(
@@ -220,6 +258,7 @@ export function measureOrgBoxes(
 
         const rect = orgContainer.getBoundingClientRect();
 
+        // Left is calculated in a separate function
         orgSizes.set(org.id, {
             width: rect.width,
             height: rect.height,
@@ -230,6 +269,10 @@ export function measureOrgBoxes(
     }
 
     let maxLevel = Math.max(...Array.from(levelsMap.keys()));
+
+    // Any levels with children of vertical levels must also be vertical,
+    // so this is set on the first vertical level found and reset on the next
+    // horizontal level
     let firstVerticalLevel: number | null = null;
 
     for (let level = 0; level <= maxLevel; level++) {
@@ -243,11 +286,6 @@ export function measureOrgBoxes(
                 cssClass + "-level " + cssClass + "-horizontal";
             levelContainer.style.columnGap = config.horizontalSpacing + "px";
             levelContainer.style.marginBottom = config.verticalSpacing + "px";
-
-            const columnWidth = Math.min(
-                config.availableSpace / treeLevel.orgs.length,
-                config.maxColWidth,
-            );
 
             const largeOrgs = treeLevel.orgs.filter((org) => org.large);
             const smallOrgs = treeLevel.orgs.filter((org) => !org.large);
@@ -275,6 +313,8 @@ export function measureOrgBoxes(
             levelContainer.style.width = config.availableSpace + "px";
             container.appendChild(levelContainer);
 
+            // Keep track of the elements because we want to measure them only
+            // after all have been added to the DOM
             const els = new Map<number, HTMLDivElement>();
 
             for (const org of treeLevel.orgs) {
@@ -304,6 +344,8 @@ export function measureOrgBoxes(
             let maxHeight = 0;
             for (const [id, el] of els) {
                 const rect = el.getBoundingClientRect();
+
+                // Left is calculated in a separate function
                 orgSizes.set(id, {
                     width: rect.width,
                     height: rect.height,
@@ -322,27 +364,27 @@ export function measureOrgBoxes(
                     }
                 }
             }
-
-            const height = levelContainer.getBoundingClientRect().height;
-            levelHeights.set(level, height);
         } else if (
             firstVerticalLevel === null &&
             treeLevel.orientation === "vertical"
         ) {
             firstVerticalLevel = level;
-            // Find all the unique parents of this level's orgs
             const verticalContainer = document.createElement("div");
             verticalContainer.className =
                 cssClass + "-level " + cssClass + "-vertical";
             verticalContainer.style.width = config.availableSpace + "px";
             container.appendChild(verticalContainer);
+
+            // Find all the unique parents of this level's orgs, we need to
+            // make sure the vertical subtree isn't wider than the parent org box.
+            // This doesn't necessarily have to always be the case, but it's simpler
+            // for now.
             const uniqueParents = new Set<ConnectedOrg>();
             for (const org of treeLevel.orgs) {
                 if (org.parent) {
                     uniqueParents.add(org.parent);
                 }
             }
-            let verticalHeights: number[] = [];
             for (const org of uniqueParents) {
                 const subtreeContainer = document.createElement("div");
                 subtreeContainer.className = cssClass + "-vertical-subtree";
@@ -361,18 +403,14 @@ export function measureOrgBoxes(
                         );
                     }
                 }
-                const height = subtreeContainer.getBoundingClientRect().height;
-                verticalHeights.push(height);
             }
-            levelHeights.set(level, Math.max(...verticalHeights));
         } else {
             // skip levels that are descendants of the first vertical level
-            levelHeights.set(level, 0);
         }
     }
 
     const updated = calculateHorizontalPositions(levelsMap, orgSizes, config);
-    // document.body.removeChild(container);
+    document.body.removeChild(container);
     const endTime = performance.now();
     const duration = endTime - startTime;
     console.log(
@@ -380,23 +418,30 @@ export function measureOrgBoxes(
         orgSizes,
     );
     console.log("[measureOrgBoxes] Measured org sizes:", orgSizes);
-    console.log("[measureOrgBoxes] Level heights:", levelHeights);
     console.log("[measureOrgBoxes] Updated placements:", updated);
 
     return orgSizes;
 }
 
+/**
+ * Calculate the horizontal positions (left) of org boxes in the chart.
+ *
+ * This is run after the measureOrgBoxes function, and is the final step
+ * in laying out the org chart.
+ */
 export function calculateHorizontalPositions(
     levelsMap: TreeLevelMap,
     placements: Map<number, OrgPlacement>,
     config: OrgChartConfig,
 ) {
+    // Helper to center an org in available space
     function centerOrg(orgId: number, containerWidth: number) {
         const placement = placements.get(orgId);
         if (!placement) return 0;
         return Math.max(0, (containerWidth - placement.width) / 2);
     }
 
+    // Recursively apply left positions for vertical levels
     function applyVerticalLeft(orgs: ConnectedOrg[], left: number) {
         for (const org of orgs) {
             const placement = placements.get(org.id);
@@ -412,6 +457,17 @@ export function calculateHorizontalPositions(
         }
     }
 
+    // Helper to shift a list of orgs by a certain amount
+    function shiftOrgs(orgs: ConnectedOrg[] | undefined, shift: number) {
+        if (!orgs) return;
+        for (const org of orgs) {
+            const placement = placements.get(org.id);
+            if (placement && placement.left !== undefined) {
+                placement.left += shift;
+            }
+        }
+    }
+
     if (!levelsMap.root) return;
     const rootLevel = levelsMap.root.level ?? 0;
     const topLevel = levelsMap.get(rootLevel);
@@ -420,10 +476,15 @@ export function calculateHorizontalPositions(
     const topOrgs = topLevel.orgs;
     if (topOrgs.length === 0) return;
 
-    const rootPlacementIdx = 0;
     const rootOrg = topOrgs[0];
     const rootPlacement = placements.get(rootOrg.id);
     if (!rootPlacement) return;
+
+    // Only the root and at most two children can be in the top level,
+    // so calculate their placements first
+
+    // Start by centering the root org and then place the two children to
+    // either side
     let rootLeft = centerOrg(rootOrg.id, config.availableSpace);
 
     let lefts: number[] = [];
@@ -449,6 +510,7 @@ export function calculateHorizontalPositions(
             return p && lefts[i] !== undefined ? lefts[i] + p.width : 0;
         }),
     );
+    // Make sure the top level orgs aren't outside availableSpace
     let shift = 0;
     if (minLeft < 0) {
         shift = -minLeft;
@@ -468,9 +530,13 @@ export function calculateHorizontalPositions(
             p.left = lefts[2] + shift;
         }
     }
+
     let skipVerticalLevels = false;
     for (const [level, treeLevel] of levelsMap.orderedEntries()) {
+        // Root level is already placed
         if (level === rootLevel) continue;
+
+        // Skip remaining vertical levels until we find a horizontal level
         if (skipVerticalLevels) {
             if (treeLevel.orientation === "horizontal") {
                 skipVerticalLevels = false;
@@ -478,7 +544,10 @@ export function calculateHorizontalPositions(
                 continue;
             }
         }
+
         if (treeLevel.orientation === "horizontal") {
+            // First group the orgs in the level by their parent so we can
+            // center them below the parent.
             const parentGroups = new Map<number, ConnectedOrg[]>();
             for (const org of treeLevel.orgs) {
                 if (org.parent) {
@@ -519,24 +588,32 @@ export function calculateHorizontalPositions(
                     right: groupLeft + totalWidth,
                 });
             }
+            // Next make sure the groups aren't overlapping each other
             groupBounds.sort((a, b) => a.left - b.left);
+            let totalOverlap = 0;
             for (let i = 1; i < groupBounds.length; i++) {
                 const prev = groupBounds[i - 1];
                 const curr = groupBounds[i];
                 if (prev.right + config.horizontalSpacing > curr.left) {
                     const overlap =
                         prev.right + config.horizontalSpacing - curr.left;
-                    for (let j = i; j < groupBounds.length; j++) {
-                        const gb = groupBounds[j];
-                        const p = placements.get(gb.pid);
-                        if (p && p.left !== undefined) {
-                            p.left += overlap;
-                            gb.left += overlap;
-                            gb.right += overlap;
-                        }
-                    }
+                    totalOverlap += overlap;
                 }
             }
+            if (totalOverlap > 0) {
+                // Shift the first and last groups outwards to make space
+                const first = groupBounds[0];
+                const last = groupBounds[groupBounds.length - 1];
+                let shiftAmount = totalOverlap / 2;
+                first.left -= shiftAmount;
+                first.right -= shiftAmount;
+                last.left += shiftAmount;
+                last.right += shiftAmount;
+                shiftOrgs(parentGroups.get(first.pid), -shiftAmount);
+                shiftOrgs(parentGroups.get(last.pid), shiftAmount);
+            }
+
+            // Finally make sure we're not outside the bounds of availableSpace
             let overallMinLeft = Math.min(...groupBounds.map((gb) => gb.left));
             let overallMaxRight = Math.max(
                 ...groupBounds.map((gb) => gb.right),
@@ -548,14 +625,8 @@ export function calculateHorizontalPositions(
                 overallShift = config.availableSpace - overallMaxRight;
             }
             if (overallShift !== 0) {
-                for (const [key, val] of parentGroups.entries()) {
-                    const gb = groupBounds.find((g) => g.pid === key);
-                    for (const org of val) {
-                        const p = placements.get(org.id);
-                        if (p && p.left !== undefined && gb) {
-                            p.left += overallShift;
-                        }
-                    }
+                for (const val of parentGroups.values()) {
+                    shiftOrgs(val, overallShift);
                 }
             }
         } else if (treeLevel.orientation === "vertical") {
@@ -595,6 +666,11 @@ export function calculateHorizontalPositions(
     return placements;
 }
 
+/**
+ * Calculate the lines between organizations in the chart.
+ *
+ * This should be run after calculateHorizontalPositions.
+ */
 export function calculateLinesBetweenOrgs(
     levelsMap: TreeLevelMap,
     placements: Map<number, OrgPlacement>,
@@ -603,7 +679,12 @@ export function calculateLinesBetweenOrgs(
     if (!levelsMap.root) return [];
     const lines: OrgLine[] = [];
     function traverse(org: ConnectedOrg) {
-        const orgLines = calculateLinesForOrg(levelsMap, org, placements, config);
+        const orgLines = calculateLinesForOrg(
+            levelsMap,
+            org,
+            placements,
+            config,
+        );
         lines.push(...orgLines);
         if (org.children && org.children.length > 0) {
             for (const child of org.children) {
@@ -615,6 +696,9 @@ export function calculateLinesBetweenOrgs(
     return lines;
 }
 
+/**
+ * Calculate the lines connecting an org to its children.
+ */
 function calculateLinesForOrg(
     levelsMap: TreeLevelMap,
     org: ConnectedOrg,
@@ -623,15 +707,18 @@ function calculateLinesForOrg(
 ) {
     const lines: OrgLine[] = [];
     const placement = placements.get(org.id);
-    if (!placement) return lines;
+    if (!placement) {
+        return lines;
+    }
     if (org.children && org.children.length > 0) {
-        // Determine if org is in a vertical level
+        // Determine if org is in a vertical level, their lines are different
         const orgLevelObj = levelsMap.get(org.level ?? 0);
-        const isVerticalLevel = orgLevelObj && orgLevelObj.orientation === "vertical";
+        const isVerticalLevel = orgLevelObj?.orientation === "vertical";
         for (const child of org.children) {
             const childPlacement = placements.get(child.id);
             if (childPlacement) {
                 const line: OrgLine = { points: [] };
+                // If the child is on the same level as its parent, the line is horizontal
                 if (child.level === org.level) {
                     // Draw a horizontal line from parent's center to child's center
                     line.points.push({
@@ -639,12 +726,17 @@ function calculateLinesForOrg(
                         y: placement.top + placement.height / 2,
                     });
                     line.points.push({
-                        x: (childPlacement.left || 0) + childPlacement.width / 2,
+                        x:
+                            (childPlacement.left || 0) +
+                            childPlacement.width / 2,
                         y: childPlacement.top + childPlacement.height / 2,
                     });
-                } else if (isVerticalLevel) {
+                }
+                // If the parent is in a vertical level, the line goes down on the side
+                else if (isVerticalLevel) {
                     // Start point: half of verticalChildOffset from the left of parent
-                    const startX = (placement.left || 0) + config.verticalChildOffset / 2;
+                    const startX =
+                        (placement.left || 0) + config.verticalChildOffset / 2;
                     const midY = childPlacement.top + childPlacement.height / 2;
                     // Go down to the middle of the child
                     line.points.push({
@@ -657,29 +749,38 @@ function calculateLinesForOrg(
                     });
                     // Go right to connect to the child
                     line.points.push({
-                        x: (childPlacement.left || 0) + childPlacement.width / 2,
+                        x:
+                            (childPlacement.left || 0) +
+                            childPlacement.width / 2,
                         y: midY,
                     });
-                } else {
+                } 
+                // Otherwise the parent is in a horizontal level
+                else {
                     // Start point: bottom center of parent
                     line.points.push({
                         x: (placement.left || 0) + placement.width / 2,
                         y: placement.top + placement.height,
                     });
                     // Vertical line down to the level gap above the child
-                    const midY = childPlacement.top - config.verticalSpacing / 2;
+                    const midY =
+                        childPlacement.top - config.verticalSpacing / 2;
                     line.points.push({
                         x: (placement.left || 0) + placement.width / 2,
                         y: midY,
                     });
                     // Horizontal line to child's center
                     line.points.push({
-                        x: (childPlacement.left || 0) + childPlacement.width / 2,
+                        x:
+                            (childPlacement.left || 0) +
+                            childPlacement.width / 2,
                         y: midY,
                     });
                     // Vertical line down to top of child
                     line.points.push({
-                        x: (childPlacement.left || 0) + childPlacement.width / 2,
+                        x:
+                            (childPlacement.left || 0) +
+                            childPlacement.width / 2,
                         y: childPlacement.top,
                     });
                 }
