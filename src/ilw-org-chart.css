@@ -11,6 +11,9 @@
     font-size: 18px;
     padding: 15px;
 }
+.org-subtitle {
+    font-size: 0.8em;
+}
 
 .ilw-org-chart-level {
     display: flex;

@@ -8,6 +8,7 @@ export interface ConnectedOrg extends Org {
     parent?: ConnectedOrg;
     level?: number;
     children?: ConnectedOrg[];
+    originalIndex?: number;
 }
 
 /**
@@ -85,6 +86,7 @@ export function treeLevelOrgs(org: Org): TreeLevelMap {
         node: Org,
         parent: ConnectedOrg | null,
         currentLevel: number,
+        originalIndex: number = 0
     ): ConnectedOrg {
         const level = currentLevel + (node.weight ?? 0);
         const connectedNode: ConnectedOrg = {
@@ -92,6 +94,7 @@ export function treeLevelOrgs(org: Org): TreeLevelMap {
             id: orgIdCount++,
             parent: parent as ConnectedOrg,
             level,
+            originalIndex,
         } as ConnectedOrg;
 
         if (!levelOrgs.has(level)) {
@@ -101,11 +104,13 @@ export function treeLevelOrgs(org: Org): TreeLevelMap {
         // Replace children with ConnectedOrgs
         if (node.children) {
             const connectedChildren: ConnectedOrg[] = [];
-            for (const child of node.children) {
+            for (let i = 0; i < node.children.length; i++) {
+                const child = node.children[i];
                 const connectedChild = traverse(
                     child,
                     connectedNode,
                     level + 1,
+                    i
                 );
                 connectedChildren.push(connectedChild);
             }
@@ -183,6 +188,50 @@ export function calculateLevelOrientations(
         if (treeLevel.orientation === "vertical") {
             propagateVertical(level);
         }
+    }
+
+    // Third pass: remove effects of weight for any levels below a vertical level
+    const orgsToMove: { org: ConnectedOrg; fromLevel: number; toLevel: number }[] = [];
+    let move = false;
+    for (const [level, treeLevel] of levels.entries()) {
+        if (treeLevel.orientation === "vertical") {
+            if (!move) {
+                move = true;
+                continue;
+            }
+            for (const org of treeLevel.orgs) {
+                let newLevel = level;
+                if (org.parent && typeof org.parent.level === 'number') {
+                    newLevel = org.parent.level + 1;
+                }
+                if (org.level !== newLevel) {
+                    orgsToMove.push({ org, fromLevel: level, toLevel: newLevel });
+                    org.level = newLevel;
+                }
+            }
+        } else {
+            move = false;
+        }
+    }
+    // Move orgs in the TreeLevelMap, then sort by originalIndex
+    for (const { org, fromLevel, toLevel } of orgsToMove) {
+        const fromTreeLevel = levels.get(fromLevel);
+        if (fromTreeLevel) {
+            fromTreeLevel.orgs = fromTreeLevel.orgs.filter(o => o.id !== org.id);
+        }
+        if (!levels.has(toLevel)) {
+            levels.set(toLevel, new TreeLevel(toLevel, []));
+        }
+        levels.get(toLevel)!.orgs.push(org);
+    }
+    // Sort orgs in each level by originalIndex
+    for (const [, treeLevel] of levels.entries()) {
+        treeLevel.orgs.sort((a, b) => {
+            if (a.originalIndex === undefined && b.originalIndex === undefined) return 0;
+            if (a.originalIndex === undefined) return 1;
+            if (b.originalIndex === undefined) return -1;
+            return a.originalIndex - b.originalIndex;
+        });
     }
 }
 
@@ -716,6 +765,7 @@ function calculateLinesForOrg(
         const isVerticalLevel = orgLevelObj?.orientation === "vertical";
         for (const child of org.children) {
             const childPlacement = placements.get(child.id);
+            const isChildVerticalLevel = levelsMap.get(child.level ?? 0)?.orientation === "vertical";
             if (childPlacement) {
                 const line: OrgLine = { points: [] };
                 // If the child is on the same level as its parent, the line is horizontal
@@ -732,8 +782,8 @@ function calculateLinesForOrg(
                         y: childPlacement.top + childPlacement.height / 2,
                     });
                 }
-                // If the parent is in a vertical level, the line goes down on the side
-                else if (isVerticalLevel) {
+                // If the child is in a vertical level, the line goes down on the side
+                else if (isChildVerticalLevel) {
                     // Start point: half of verticalChildOffset from the left of parent
                     const startX =
                         (placement.left || 0) + config.verticalChildOffset / 2;

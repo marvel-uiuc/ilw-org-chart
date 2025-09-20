@@ -107,10 +107,10 @@ export default class OrgChart extends LitElement {
             "ilw-org-chart-large": !!org.large,
         };
         const styles = {
-            top: `${placement.top}px`,
-            left: `${placement.left}px`,
-            width: `${placement.width}px`,
-            height: `${placement.height}px`,
+            top: `${placement?.top}px`,
+            left: `${placement?.left}px`,
+            width: `${placement?.width}px`,
+            height: `${placement?.height}px`,
         };
         return html`<li
             class="org-container""
