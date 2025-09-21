@@ -55,3 +55,25 @@
         pointer-events: none;
     }
 }
+.level-debug {
+    font-family: sans-serif;
+    position: absolute;
+    top: 0;
+    border: 1px solid gray;
+    background: white;
+    padding: 4px;
+    font-size: 12px;
+    text-align: left;
+    z-index: 1000;
+    width: 200px;
+    overflow: auto;
+
+    h2 {
+        font-size: 15px;
+        margin: 0 0 4px 0;
+    }
+    h3 {
+        font-size: 13px;
+        margin: 8px 0 2px 0;
+    }
+}

@@ -6,7 +6,6 @@ import {
     unsafeCSS,
 } from "lit";
 // @ts-ignore
-import styles from "./ilw-org-chart.styles.css?inline";
 import "./ilw-org-chart.css";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { Org } from "./Org";
@@ -17,6 +16,7 @@ import {
     measureOrgBoxes,
     OrgChartConfig,
     OrgPlacement,
+    TreeLevel,
     TreeLevelMap,
     treeLevelOrgs,
 } from "./tree";
@@ -38,15 +38,16 @@ export default class OrgChart extends LitElement {
     @query(".ilw-org-chart-canvas")
     canvas!: HTMLCanvasElement;
 
-    config: OrgChartConfig = {
+    static config: OrgChartConfig = {
         horizontalSpacing: 40,
         availableSpace: 1200,
         largeOrgSizeMultiplier: 1.5,
         verticalChildOffset: 20,
-        verticalSpacing: 20,
+        verticalSpacing: 30,
         verticalSubtreeSpacing: 20,
         maxColWidth: 300,
         minColWidth: 150,
+        skipLineExtraSpacing: 80
     };
 
     _treeTask = new Task(this, {
@@ -54,18 +55,18 @@ export default class OrgChart extends LitElement {
             if (!org) {
                 return null;
             }
-            this.config.availableSpace = parseInt(this.width);
+            OrgChart.config.availableSpace = parseInt(this.width);
             const tree = treeLevelOrgs(org);
-            calculateLevelOrientations(tree, this.config);
+            calculateLevelOrientations(tree, OrgChart.config);
             const measured = measureOrgBoxes(
                 tree,
                 "ilw-org-chart",
-                this.config,
+                OrgChart.config,
             );
             const lines = calculateLinesBetweenOrgs(
                 tree,
                 measured,
-                this.config,
+                OrgChart.config,
             );
             return {
                 tree,
@@ -76,16 +77,16 @@ export default class OrgChart extends LitElement {
         args: () => [this.org] as const,
     });
 
-    static get styles() {
-        return unsafeCSS(styles);
-    }
-
     constructor() {
         super();
     }
 
     createRenderRoot() {
         return this;
+    }
+
+    refreshTask() {
+        this._treeTask.run();
     }
 
     private renderChildren(
@@ -113,7 +114,10 @@ export default class OrgChart extends LitElement {
             height: `${placement?.height}px`,
         };
         return html`<li
-            class="org-container""
+            class="org-container"
+            level=${org.level}
+            id="org-${org.id}"
+            lineskiplevels=${org.lineSkipsLevels}
         >
             <div class=${classMap(classes)} style=${styleMap(styles)}>
                 <div class="org-title">${org.title}</div>
@@ -150,6 +154,19 @@ export default class OrgChart extends LitElement {
                           )
                         : ""}
                 </ul>
+                <div class="level-debug" style="left: ${this.width}px;">
+                <h2>Level Debug Info</h2>
+                    ${Array.from(this._treeTask.value.tree.entries()).map(
+                        ([level, entry]: [number, TreeLevel], index: number) =>
+                            html`<div>
+                                <h3>Level ${level} (${entry.orgs.length} orgs):</h3>
+                                Orientation: ${entry.orientation}<br />
+                                Right Skip: ${entry.rightSkipLine}<br />
+                                Left Skip: ${entry.leftSkipLine}<br />
+                                Empty Spaces: ${entry.emptySpaces.map((space) => Math.floor(space.start) + "-" + Math.floor(space.end)).join(", ")}<br />
+                            </div>`,
+                    )}
+                </div>
             </div>`;
         } else {
             return html`<div>No organization data provided.</div>`;

@@ -6,9 +6,19 @@ import { Org } from "./Org";
 export interface ConnectedOrg extends Org {
     id: number;
     parent?: ConnectedOrg;
-    level?: number;
+    level: number;
     children?: ConnectedOrg[];
-    originalIndex?: number;
+    /**
+     * Original index among siblings, used for stable sorting.
+     */
+    originalIndex: number;
+    /**
+     * If the line to a child org skips levels, how many levels are skipped.
+     *
+     * This is so we can place these orgs on the edges so the lines don't cross
+     * other org boxes.
+     */
+    lineSkipsLevels?: number;
 }
 
 /**
@@ -40,6 +50,7 @@ export type OrgChartConfig = {
     availableSpace: number;
     minColWidth: number;
     maxColWidth: number;
+    skipLineExtraSpacing: number;
 };
 
 /**
@@ -49,6 +60,12 @@ export class TreeLevel {
     level: number;
     orgs: ConnectedOrg[];
     orientation?: "horizontal" | "vertical";
+    rightSkipLine: boolean = false;
+    leftSkipLine: boolean = false;
+    /**
+     * Array of empty space intervals for this level, as { start, end } in px.
+     */
+    emptySpaces: { start: number; end: number }[] = [];
     constructor(level: number, orgs: ConnectedOrg[]) {
         this.level = level;
         this.orgs = orgs;
@@ -86,7 +103,7 @@ export function treeLevelOrgs(org: Org): TreeLevelMap {
         node: Org,
         parent: ConnectedOrg | null,
         currentLevel: number,
-        originalIndex: number = 0
+        originalIndex: number = 0,
     ): ConnectedOrg {
         const level = currentLevel + (node.weight ?? 0);
         const connectedNode: ConnectedOrg = {
@@ -110,9 +127,13 @@ export function treeLevelOrgs(org: Org): TreeLevelMap {
                     child,
                     connectedNode,
                     level + 1,
-                    i
+                    i,
                 );
                 connectedChildren.push(connectedChild);
+                if (connectedChild.level > level + 1) {
+                    connectedNode.lineSkipsLevels =
+                        connectedChild.level - (level + 1);
+                }
             }
             connectedNode.children = connectedChildren;
         }
@@ -173,11 +194,14 @@ export function calculateLevelOrientations(
         visited.add(level);
         const treeLevel = levels.get(level);
         if (!treeLevel) return;
+        treeLevel.orientation = "vertical";
+        treeLevel.leftSkipLine = false;
+        treeLevel.rightSkipLine = false;
         for (const org of treeLevel.orgs) {
+            org.lineSkipsLevels = undefined;
             if (org.children && org.children.length > 0) {
                 for (const child of org.children) {
                     if (child.level !== undefined) {
-                        treeLevel.orientation = "vertical";
                         propagateVertical(child.level);
                     }
                 }
@@ -191,33 +215,41 @@ export function calculateLevelOrientations(
     }
 
     // Third pass: remove effects of weight for any levels below a vertical level
-    const orgsToMove: { org: ConnectedOrg; fromLevel: number; toLevel: number }[] = [];
-    let move = false;
+    const orgsToMove: {
+        org: ConnectedOrg;
+        fromLevel: number;
+        toLevel: number;
+    }[] = [];
+
     for (const [level, treeLevel] of levels.entries()) {
         if (treeLevel.orientation === "vertical") {
-            if (!move) {
-                move = true;
-                continue;
-            }
             for (const org of treeLevel.orgs) {
                 let newLevel = level;
-                if (org.parent && typeof org.parent.level === 'number') {
+                if (org.parent && typeof org.parent.level === "number") {
                     newLevel = org.parent.level + 1;
                 }
-                if (org.level !== newLevel) {
-                    orgsToMove.push({ org, fromLevel: level, toLevel: newLevel });
+                // Only move if the new level is vertical as well
+                if (
+                    org.level !== newLevel &&
+                    levels.get(newLevel)?.orientation === "vertical"
+                ) {
+                    orgsToMove.push({
+                        org,
+                        fromLevel: level,
+                        toLevel: newLevel,
+                    });
                     org.level = newLevel;
                 }
             }
-        } else {
-            move = false;
         }
     }
     // Move orgs in the TreeLevelMap, then sort by originalIndex
     for (const { org, fromLevel, toLevel } of orgsToMove) {
         const fromTreeLevel = levels.get(fromLevel);
         if (fromTreeLevel) {
-            fromTreeLevel.orgs = fromTreeLevel.orgs.filter(o => o.id !== org.id);
+            fromTreeLevel.orgs = fromTreeLevel.orgs.filter(
+                (o) => o.id !== org.id,
+            );
         }
         if (!levels.has(toLevel)) {
             levels.set(toLevel, new TreeLevel(toLevel, []));
@@ -227,11 +259,72 @@ export function calculateLevelOrientations(
     // Sort orgs in each level by originalIndex
     for (const [, treeLevel] of levels.entries()) {
         treeLevel.orgs.sort((a, b) => {
-            if (a.originalIndex === undefined && b.originalIndex === undefined) return 0;
+            if (a.originalIndex === undefined && b.originalIndex === undefined)
+                return 0;
             if (a.originalIndex === undefined) return 1;
             if (b.originalIndex === undefined) return -1;
             return a.originalIndex - b.originalIndex;
         });
+
+        // If one or more orgs in a horizontal level has lineSkipsLevels, move those to edges
+        if (treeLevel.orientation === "horizontal") {
+            let skippingOrgs = treeLevel.orgs.filter(
+                (o) => o.lineSkipsLevels && o.lineSkipsLevels > 0,
+            );
+            if (skippingOrgs.length > 0) {
+                let leftEdge: ConnectedOrg | null = skippingOrgs[0];
+                let rightEdge: ConnectedOrg | null =
+                    skippingOrgs[skippingOrgs.length - 1];
+                if (treeLevel.level > 0) {
+                    skippingOrgs = skippingOrgs.slice(0, 2); // only two can be moved to edges
+                    // Move skipping orgs to the edges
+                    rightEdge = skippingOrgs[0];
+                    treeLevel.orgs = treeLevel.orgs.filter(
+                        (o) => !skippingOrgs.includes(o),
+                    );
+                    treeLevel.orgs.push(rightEdge);
+
+                    if (skippingOrgs.length > 1) {
+                        leftEdge = skippingOrgs[1];
+                        treeLevel.orgs.unshift(leftEdge);
+                    } else {
+                        leftEdge = null;
+                    }
+                } else {
+                    // We don't move the root, and only root can have edge skipping on top level
+                    // We also want to check that the root is actually close to the edge, and not
+                    // in the middle somewhere.
+                    const topLevelSize =
+                        levels.get(0)!.orgs.length *
+                        (config.maxColWidth + config.horizontalSpacing);
+                    const rootFarFromLeft =
+                        leftEdge === levels.root &&
+                        config.availableSpace > topLevelSize;
+                    const rootFarFromRight =
+                        rightEdge === levels.root &&
+                        config.availableSpace > topLevelSize;
+
+                    if (leftEdge !== levels.root || rootFarFromLeft) {
+                        leftEdge = null;
+                    }
+                    if (rightEdge !== levels.root || rootFarFromRight) {
+                        rightEdge = null;
+                    }
+                }
+
+                if (rightEdge) {
+                    for (let i = 1; i <= rightEdge.lineSkipsLevels!; i++) {
+                        levels.get(treeLevel.level + i)!.rightSkipLine = true;
+                    }
+                }
+
+                if (leftEdge) {
+                    for (let i = 1; i <= leftEdge.lineSkipsLevels!; i++) {
+                        levels.get(treeLevel.level + i)!.leftSkipLine = true;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -329,6 +422,13 @@ export function measureOrgBoxes(
         if (!treeLevel) continue;
 
         if (treeLevel.orientation === "horizontal") {
+            let realAvailableSpace = config.availableSpace;
+            if (treeLevel.rightSkipLine) {
+                realAvailableSpace -= config.skipLineExtraSpacing;
+            }
+            if (treeLevel.leftSkipLine) {
+                realAvailableSpace -= config.skipLineExtraSpacing;
+            }
             firstVerticalLevel = null;
             const levelContainer = document.createElement("div");
             levelContainer.className =
@@ -344,7 +444,7 @@ export function measureOrgBoxes(
                 largeOrgs.length * config.largeOrgSizeMultiplier +
                 smallOrgs.length * 1.0;
             const unitWidth =
-                (config.availableSpace -
+                (realAvailableSpace -
                     (totalUnits - 1) * config.horizontalSpacing) /
                 totalUnits;
             const largeOrgWidth = Math.min(
@@ -359,7 +459,7 @@ export function measureOrgBoxes(
                 config.maxColWidth,
             );
 
-            levelContainer.style.width = config.availableSpace + "px";
+            levelContainer.style.width = realAvailableSpace + "px";
             container.appendChild(levelContainer);
 
             // Keep track of the elements because we want to measure them only
@@ -580,6 +680,29 @@ export function calculateHorizontalPositions(
         }
     }
 
+    // Record empty spaces for the top level
+    const orgsWithPlacement = topOrgs
+        .map((org, i) => {
+            const p = placements.get(org.id);
+            return p && p.left !== undefined
+                ? { left: p.left, right: p.left + p.width }
+                : null;
+        })
+        .filter(Boolean) as { left: number; right: number }[];
+    orgsWithPlacement.sort((a, b) => a.left - b.left);
+    const emptySpaces: { start: number; end: number }[] = [];
+    let prevRight = 0;
+    for (const org of orgsWithPlacement) {
+        if (org.left > prevRight + 1) {
+            emptySpaces.push({ start: prevRight, end: org.left });
+        }
+        prevRight = org.right;
+    }
+    if (prevRight < config.availableSpace) {
+        emptySpaces.push({ start: prevRight, end: config.availableSpace });
+    }
+    topLevel.emptySpaces = emptySpaces;
+
     let skipVerticalLevels = false;
     for (const [level, treeLevel] of levelsMap.orderedEntries()) {
         // Root level is already placed
@@ -598,6 +721,14 @@ export function calculateHorizontalPositions(
             // First group the orgs in the level by their parent so we can
             // center them below the parent.
             const parentGroups = new Map<number, ConnectedOrg[]>();
+            let realAvailableSpace = config.availableSpace;
+            if (treeLevel.rightSkipLine) {
+                realAvailableSpace -= config.skipLineExtraSpacing;
+            }
+            if (treeLevel.leftSkipLine) {
+                realAvailableSpace -= config.skipLineExtraSpacing;
+            }
+
             for (const org of treeLevel.orgs) {
                 if (org.parent) {
                     const pid = org.parent.id;
@@ -619,10 +750,10 @@ export function calculateHorizontalPositions(
                     parentPlacement && parentPlacement.left !== undefined
                         ? parentPlacement.left +
                           (parentPlacement.width - totalWidth) / 2
-                        : centerOrg(group[0].id, config.availableSpace);
+                        : centerOrg(group[0].id, realAvailableSpace);
                 if (groupLeft < 0) groupLeft = 0;
-                if (groupLeft + totalWidth > config.availableSpace)
-                    groupLeft = config.availableSpace - totalWidth;
+                if (groupLeft + totalWidth > realAvailableSpace)
+                    groupLeft = realAvailableSpace - totalWidth;
                 let offset = groupLeft;
                 for (const org of group) {
                     const p = placements.get(org.id);
@@ -667,17 +798,45 @@ export function calculateHorizontalPositions(
             let overallMaxRight = Math.max(
                 ...groupBounds.map((gb) => gb.right),
             );
+            let leftBound = treeLevel.leftSkipLine
+                ? config.skipLineExtraSpacing
+                : 0;
+            let rightBound = realAvailableSpace + leftBound;
             let overallShift = 0;
-            if (overallMinLeft < 0) {
-                overallShift = -overallMinLeft;
-            } else if (overallMaxRight > config.availableSpace) {
-                overallShift = config.availableSpace - overallMaxRight;
+            if (overallMinLeft < leftBound) {
+                overallShift = leftBound - overallMinLeft;
+            } else if (overallMaxRight > rightBound) {
+                overallShift = rightBound - overallMaxRight;
             }
             if (overallShift !== 0) {
                 for (const val of parentGroups.values()) {
                     shiftOrgs(val, overallShift);
                 }
             }
+
+            // Record empty spaces for this horizontal level
+            const orgsWithPlacement = treeLevel.orgs
+                .map((org) => {
+                    const p = placements.get(org.id);
+                    return p && p.left !== undefined
+                        ? { left: p.left, right: p.left + p.width }
+                        : null;
+                })
+                .filter(Boolean) as { left: number; right: number }[];
+            orgsWithPlacement.sort((a, b) => a.left - b.left);
+            const emptySpaces: { start: number; end: number }[] = [];
+            let prevRight = 0;
+            for (const org of orgsWithPlacement) {
+                // +1 is to avoid tiny gaps due to rounding errors
+                if (org.left > prevRight + 1) {
+                    emptySpaces.push({ start: prevRight, end: org.left });
+                }
+                prevRight = org.right;
+            }
+            if (prevRight < realAvailableSpace) {
+                emptySpaces.push({ start: prevRight, end: realAvailableSpace });
+            }
+            treeLevel.emptySpaces = emptySpaces;
         } else if (treeLevel.orientation === "vertical") {
             if (!skipVerticalLevels) {
                 const parentGroups = new Map<number, ConnectedOrg[]>();
@@ -706,12 +865,16 @@ export function calculateHorizontalPositions(
                     }
                 }
 
+                // For vertical levels, emptySpaces is always [{ start: 0, end: config.availableSpace }]
+                treeLevel.emptySpaces = [
+                    { start: 0, end: config.availableSpace },
+                ];
+
                 // skip all levels until we find a horizontal level
                 skipVerticalLevels = true;
             }
         }
     }
-    console.log("rootPlacement after all levels", rootPlacement);
     return placements;
 }
 
@@ -763,9 +926,14 @@ function calculateLinesForOrg(
         // Determine if org is in a vertical level, their lines are different
         const orgLevelObj = levelsMap.get(org.level ?? 0);
         const isVerticalLevel = orgLevelObj?.orientation === "vertical";
+        const orgIsFirstInLevel = orgLevelObj?.orgs[0] === org;
+        const orgIsLastInLevel =
+            orgLevelObj?.orgs[orgLevelObj.orgs.length - 1] === org;
+
         for (const child of org.children) {
             const childPlacement = placements.get(child.id);
-            const isChildVerticalLevel = levelsMap.get(child.level ?? 0)?.orientation === "vertical";
+            const isChildVerticalLevel =
+                levelsMap.get(child.level ?? 0)?.orientation === "vertical";
             if (childPlacement) {
                 const line: OrgLine = { points: [] };
                 // If the child is on the same level as its parent, the line is horizontal
@@ -780,6 +948,76 @@ function calculateLinesForOrg(
                             (childPlacement.left || 0) +
                             childPlacement.width / 2,
                         y: childPlacement.top + childPlacement.height / 2,
+                    });
+                } else if (org.lineSkipsLevels && org.lineSkipsLevels > 0) {
+                    // Start the line half of skipLineExtraSpacing from the edge of parent
+                    let startX: number;
+
+                    const level = levelsMap.get(org.level + 1)!;
+                    // If the line skips levels, but it's not skipping at the edges,
+                    // we want to start the line from the closest gap to the center of the org
+                    if (!level?.leftSkipLine && !level?.rightSkipLine) {
+                        // Find the closest gap to the center of the org
+                        const emptySpaces = level.emptySpaces || [];
+                        const centerX =
+                            (placement.left || 0) + placement.width / 2;
+                        let closestGap: { start: number; end: number } | null =
+                            null;
+                        let closestDistance = Infinity;
+                        for (const gap of emptySpaces) {
+                            const gapCenter = (gap.start + gap.end) / 2;
+                            const distance = Math.abs(gapCenter - centerX);
+                            if (distance < closestDistance) {
+                                closestDistance = distance;
+                                closestGap = gap;
+                            }
+                        }
+                        if (closestGap) {
+                            startX = (closestGap.start + closestGap.end) / 2;
+                        } else {
+                            startX = centerX; // fallback
+                        }
+                    } else if (orgIsLastInLevel) {
+                        // Start from the right edge of the org
+                        startX =
+                            (placement.left || 0) +
+                            placement.width -
+                            config.skipLineExtraSpacing / 2;
+                    } else if (orgIsFirstInLevel) {
+                        // Start from the left edge of the org
+                        startX =
+                            (placement.left || 0) +
+                            config.skipLineExtraSpacing / 2;
+                    } else {
+                        // Fallback to center
+                        startX =
+                            (placement.left || 0) + placement.width / 2;
+                    }
+
+                    line.points.push({
+                        x: startX,
+                        y: placement.top + placement.height / 2,
+                    });
+                    // Vertical line down to the level gap above the child
+                    const midY =
+                        childPlacement.top - config.verticalSpacing / 2;
+                    line.points.push({
+                        x: startX,
+                        y: midY,
+                    });
+                    // Horizontal line to child's center
+                    line.points.push({
+                        x:
+                            (childPlacement.left || 0) +
+                            childPlacement.width / 2,
+                        y: midY,
+                    });
+                    // Vertical line down to top of child
+                    line.points.push({
+                        x:
+                            (childPlacement.left || 0) +
+                            childPlacement.width / 2,
+                        y: childPlacement.top,
                     });
                 }
                 // If the child is in a vertical level, the line goes down on the side
