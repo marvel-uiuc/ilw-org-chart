@@ -999,8 +999,14 @@ function calculateLinesForOrg(
                         y: placement.top + placement.height / 2,
                     });
                     // Vertical line down to the level gap above the child
+                    
+                    // Vertical line down to the level gap above the child
+                    const isChildVerticalLevel =
+                        levelsMap.get(child.level ?? 0)?.orientation ===
+                        "vertical";
+                    const spacing = isChildVerticalLevel ? config.verticalSubtreeSpacing / 2 : config.verticalSpacing / 2;
                     const midY =
-                        childPlacement.top - config.verticalSpacing / 2;
+                        childPlacement.top - spacing;
                     line.points.push({
                         x: startX,
                         y: midY,
@@ -1051,8 +1057,12 @@ function calculateLinesForOrg(
                         y: placement.top + placement.height,
                     });
                     // Vertical line down to the level gap above the child
-                    const midY =
-                        childPlacement.top - config.verticalSpacing / 2;
+                    const isChildVerticalLevel =
+                        levelsMap.get(child.level ?? 0)?.orientation ===
+                        "vertical";
+                    const spacing = isChildVerticalLevel ? config.verticalSubtreeSpacing / 2 : config.verticalSpacing / 2;
+                    const midY = childPlacement.top - spacing;
+                    console.log("midY", midY, isChildVerticalLevel, spacing);
                     line.points.push({
                         x: (placement.left || 0) + placement.width / 2,
                         y: midY,
